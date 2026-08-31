@@ -267,6 +267,19 @@ function readFile(text) {
     var out = ADAPTERS[i].read(parsed);
     if (out) return out;
   }
+
+  /* A backup of the right app with nothing in it is a different problem from an
+     unrecognised file, and saying so saves the guess. Syllogimous will export
+     just a theme, which is a real backup of a real thing and holds no history. */
+  if (parsed && typeof parsed === "object") {
+    for (var key in parsed) {
+      if (key.indexOf("SYL_") === 0 || key.indexOf("syllogimous-") === 0) {
+        return { error: "A Syllogimous backup with no history in it — a theme or "
+          + "settings export rather than a full one." };
+      }
+    }
+  }
+
   return { error: "No adapter recognised that file." };
 }
 

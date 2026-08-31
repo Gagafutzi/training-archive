@@ -1,0 +1,166 @@
+#!/usr/bin/env node
+"use strict";
+
+/*
+ * Build the archive from everything on this machine.
+ *
+ *     node tools/build.js
+ *
+ * Finds the Anki collections, the trainer exports in ~/Downloads and any archive
+ * you already have, folds the lot together and writes one file.
+ *
+ * WHY THIS USES THE PAGE'S OWN MODULES
+ * ------------------------------------
+ * The merge is the whole promise of the project, and it is tested. A second
+ * implementation of it here — in Python, or hand-rolled — would be a second
+ * source of truth about what "already imported" means, and the two would drift
+ * in the direction nobody notices: quietly counting something twice. So this
+ * requires `js/record.js` and `js/archive.js` and does no merging of its own.
+ *
+ * WHERE THE ARCHIVE GOES
+ * ----------------------
+ * **Outside the repository**, in your home directory. This repo can be pushed to
+ * GitHub; your training record should not be. `.gitignore` covers the filenames
+ * too, in case one is ever written here by hand.
+ */
+
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { execFileSync } = require("child_process");
+
+const { readFile } = require("../js/adapters.js");
+const A = require("../js/archive.js");
+
+const HOME = os.homedir();
+
+/* Where things live on this machine. Automated deliberately: the archive never
+   leaves this computer, so there is nothing to be gained by making a person
+   type the same four paths every week. */
+const SOURCES = {
+  archive: path.join(HOME, "training-archive.json"),
+  downloads: path.join(HOME, "Downloads"),
+  patterns: [
+    /^syllogimous-export.*\.json$/,
+    /^rnb-.*\.json$/,
+  ],
+  ankiScript: path.join(__dirname, "anki-export.py"),
+};
+
+function say(line) { process.stdout.write(line + "\n"); }
+
+/* ------------------------------------------------------------------ *
+ * Gathering                                                           *
+ * ------------------------------------------------------------------ */
+
+function exportsInDownloads() {
+  let names;
+  try { names = fs.readdirSync(SOURCES.downloads); } catch (e) { return []; }
+
+  return names
+    .filter(n => SOURCES.patterns.some(p => p.test(n)))
+    .map(n => path.join(SOURCES.downloads, n))
+    /* Oldest first, so where two exports disagree about one record the newer
+       reading is the one left standing — the merge replaces on a repeated id,
+       and a later export saw the same event with more history behind it. */
+    .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+}
+
+function ankiSource() {
+  const out = path.join(os.tmpdir(), "training-archive-anki-source.json");
+  try {
+    const log = execFileSync("python3", [SOURCES.ankiScript, "--out", out],
+      { encoding: "utf8" });
+    log.trim().split("\n").forEach(l => say("   " + l));
+    return out;
+  } catch (e) {
+    say("   (no anki collection read: " + String(e.message).split("\n")[0] + ")");
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Building                                                            *
+ * ------------------------------------------------------------------ */
+
+function load() {
+  /* An archive that already exists is the starting point, not something to be
+     overwritten: it may hold records from an export that has since been deleted
+     from Downloads, which is the whole reason the file is the archive. */
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SOURCES.archive, "utf8"));
+    if (parsed && parsed.schema === 1 && Array.isArray(parsed.records)) {
+      say("Starting from " + SOURCES.archive + " (" + parsed.records.length + " records)");
+      return parsed;
+    }
+  } catch (e) { /* no archive yet, which is the ordinary first run */ }
+  return A.emptyArchive();
+}
+
+function main() {
+  const archive = load();
+  const before = archive.records.length;
+
+  say("\nAnki");
+  const anki = ankiSource();
+
+  say("\nExports in " + SOURCES.downloads);
+  const files = exportsInDownloads();
+  if (!files.length) say("   (none found)");
+
+  const all = files.concat(anki ? [anki] : []);
+  for (const file of all) {
+    let reading;
+    try {
+      reading = readFile(fs.readFileSync(file, "utf8"));
+    } catch (e) {
+      say("   " + path.basename(file) + ": unreadable");
+      continue;
+    }
+    if (reading.error) {
+      say("   " + path.basename(file) + ": " + reading.error);
+      continue;
+    }
+
+    const out = A.fold(archive, reading, path.basename(file));
+    say("   " + path.basename(file).padEnd(38) + " " + reading.source.padEnd(12)
+      + " +" + out.added + " new, " + out.updated + " updated");
+  }
+
+  if (!archive.records.length) {
+    say("\nNothing to write.");
+    return;
+  }
+
+  fs.writeFileSync(SOURCES.archive, JSON.stringify(archive, null, 1));
+
+  /* ---- what it now holds ---- */
+
+  say("\nArchive: " + SOURCES.archive);
+  say("   " + archive.records.length + " records ("
+    + (archive.records.length - before) + " added this run)");
+
+  const names = Object.keys(archive.minutes).sort();
+  for (const name of names) {
+    const s = A.sourceSummary(archive, name);
+    if (!s) continue;
+    say("   " + name.padEnd(13)
+      + String(s.records).padStart(6) + " " + (s.kind + "s").padEnd(9)
+      + String(s.days).padStart(4) + " days "
+      + String(Math.round(s.minutes)).padStart(5) + " min   "
+      + s.first + " to " + s.last);
+  }
+
+  say("");
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const pair = A.overlap(archive, names[i], names[j]);
+      say("   " + (names[i] + " x " + names[j]).padEnd(28)
+        + pair.days.length + " days, " + pair.weeks.length + " week(s) trained in both");
+    }
+  }
+
+  if (anki) { try { fs.unlinkSync(anki); } catch (e) { /* leave it */ } }
+}
+
+main();

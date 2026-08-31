@@ -1,0 +1,4 @@
+# The archive is a record of you, and this repo can be pushed.
+training-archive*.json
+anki-source*.json
+*.anki2

@@ -59,6 +59,27 @@ against the hypothesis; against control modes, since a lift that appears
 everywhere equally is practice; and with a permutation null shown beside the
 number, along with how many pairs were tested.
 
+## Building it from this machine
+
+```
+node tools/build.js
+```
+
+Finds the Anki collections, every trainer export in `~/Downloads`, and the
+archive you already have, and folds the lot into `~/training-archive.json`.
+
+The archive is written **outside the repository** and `.gitignore` covers the
+filenames besides: this repo can be pushed to GitHub and your training record
+should not be.
+
+It uses the page's own merge rather than repeating it. A second implementation
+would be a second source of truth about what "already imported" means, and the
+two would drift in the direction nobody notices — quietly counting something
+twice.
+
+Exports are folded oldest first, so where two disagree about one record the newer
+reading is the one left standing.
+
 ## Anki
 
 Anki keeps its reviews in a SQLite database, so the reading happens outside the
