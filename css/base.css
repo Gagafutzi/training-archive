@@ -1,0 +1,91 @@
+/* One stylesheet, no build step. The value of this project is that it still
+   runs in five years, and a toolchain is the part that rots first. */
+
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --line: #272e38;
+  --ink: #d7dee8;
+  --dim: #7d8ca6;
+  --accent: #58a6ff;
+  --ok: #3fb950;
+  --bad: #f85149;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+  max-inline-size: 60rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 1.5rem; margin: 0 0 .35rem; }
+h2 { font-size: 1.05rem; margin: 2.25rem 0 .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+h3 { font-size: .95rem; margin: 0 0 .35rem; }
+p { margin: .35rem 0; }
+code { font-size: .85em; color: var(--accent); }
+
+.dim { color: var(--dim); }
+
+/* ---- the drop zone ---- */
+
+.drop {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  text-align: center;
+  transition: border-color .12s, background .12s;
+}
+
+.drop.over { border-color: var(--accent); background: #1b2430; }
+
+.row { display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; margin-top: 1rem; }
+
+.btn {
+  padding: .5rem .9rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #1c2330;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #05080d; font-weight: 600; }
+.btn:disabled { opacity: .45; cursor: default; border-color: var(--line); }
+
+/* ---- cards ---- */
+
+.cards { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+
+.card {
+  padding: .85rem 1rem;
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.card.ok { border-inline-start-color: var(--ok); }
+.card.waiting { border-inline-start-color: var(--dim); }
+
+/* ---- the day table ---- */
+
+table { inline-size: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: .3rem .5rem; text-align: right; border-block-end: 1px solid var(--line); }
+th { color: var(--dim); font-weight: 500; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+th:first-child, td:first-child { text-align: left; }
+td:last-child { color: var(--ok); font-size: .8rem; }
+
+/* ---- the import log ---- */
+
+.log { list-style: none; padding: 0; margin: 0; font-size: .88rem; color: var(--dim); }
+.log li { padding: .3rem 0; border-block-end: 1px solid var(--line); }
+.log li.bad { color: var(--bad); }

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training archive</title>
+<link rel="stylesheet" href="css/base.css">
+</head>
+<body>
+
+<header>
+  <h1>Training archive</h1>
+  <p class="dim">
+    One record across every trainer. The <b>file is the archive</b> — this page only
+    maintains it. Nothing a browser holds survives clearing site data, so the copy
+    that matters is the one you download and keep.
+  </p>
+</header>
+
+<section id="drop" class="drop">
+  <p><b>Drop exports here</b> — or the archive itself, to restore it.</p>
+  <p class="dim">Syllogimous backups and RNB exports are recognised by their shape, not their name.</p>
+  <div class="row">
+    <label class="btn">Choose files<input id="file" type="file" accept=".json" multiple hidden></label>
+    <button id="neighbours" class="btn" type="button">Read this browser</button>
+    <button id="save" class="btn primary" type="button" disabled>Download archive</button>
+  </div>
+</section>
+
+<section>
+  <h2>Sources</h2>
+  <div id="sources" class="cards"></div>
+</section>
+
+<section>
+  <h2>Overlap</h2>
+  <p class="dim">
+    Comparing two trainers needs weeks in which both were played. Until there are
+    enough, this counts them and says nothing else — with a handful of days, the
+    strongest correlation between two <em>unrelated</em> measures still looks
+    convincing, so a number here would mislead exactly when it was least earned.
+  </p>
+  <div id="overlap" class="cards"></div>
+</section>
+
+<section>
+  <h2>Days</h2>
+  <table id="days"></table>
+</section>
+
+<section>
+  <h2>Imports</h2>
+  <ul id="log" class="log"></ul>
+</section>
+
+<script src="js/record.js"></script>
+<script src="js/adapters.js"></script>
+<script src="js/archive.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
