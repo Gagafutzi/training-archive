@@ -101,6 +101,12 @@ function readSyllogimous(data) {
         depth: q.depth || 0,
         widthDelta: q.widthDelta || 0,
         timer: q.timerTypeOnAnswer || "0",
+        /* "0" all premises at once, "1"/"2" the carousels. Absent on anything
+           answered before the field existed, and null rather than "0" for
+           those: not knowing is a different thing from knowing it was the
+           default, and an archive that guessed would be inventing the very
+           distinction it was asked to make. */
+        presentation: q.gameModeOnAnswer == null ? null : String(q.gameModeOnAnswer),
         claims: Array.isArray(q.series) ? q.series.length : 0,
       },
     }));

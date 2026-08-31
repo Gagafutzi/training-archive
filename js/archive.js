@@ -39,7 +39,54 @@ function emptyArchive() {
        trainers count time separately from what they count as an item, and one
        of them counts through a block you abandoned. */
     minutes: {},
+    /**
+     * The stretches each source is *known about*, as `[from, to]` day pairs.
+     *
+     * Without this a chart cannot tell "trained nothing that week" from "no
+     * export survives from that week", and it will confidently draw the second
+     * as the first. Reported from the person whose record it is: the gaps in
+     * their history were months of training whose files are gone.
+     *
+     * An export covers from its own earliest record to the day it was written:
+     * inside that window an absent day really is a day nobody trained, because
+     * the export would have carried it. Outside any window, absence means
+     * nothing at all.
+     *
+     * It is deliberately not inferred from the records themselves. Records tell
+     * you when someone trained; only the file's date tells you when someone was
+     * *watching*.
+     */
+    coverage: {},
   };
+}
+
+/** `[from, to]` day pairs merged into the fewest that cover the same days. */
+function mergeSpans(spans) {
+  const sorted = spans.slice().sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  const out = [];
+  for (const span of sorted) {
+    const last = out[out.length - 1];
+    // Touching counts as overlapping: two exports a day apart leave no hole.
+    if (last && span[0] <= nextDay(last[1])) {
+      if (span[1] > last[1]) last[1] = span[1];
+    } else {
+      out.push([span[0], span[1]]);
+    }
+  }
+  return out;
+}
+
+function nextDay(day) {
+  const d = new Date(day + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whether a day falls inside a stretch anybody was watching. */
+function covered(archive, source, day) {
+  const spans = (archive.coverage || {})[source] || [];
+  for (const span of spans) if (day >= span[0] && day <= span[1]) return true;
+  return false;
 }
 
 /**
@@ -51,7 +98,7 @@ function emptyArchive() {
  * time two overlapping exports were dropped in. Union, never addition, is the
  * same rule the records follow and for the same reason.
  */
-function fold(archive, reading, fileName) {
+function fold(archive, reading, fileName, writtenOn) {
   var merged = _mergeRecords(archive.records, reading.records);
   archive.records = merged.records;
 
@@ -62,6 +109,32 @@ function fold(archive, reading, fileName) {
     var next = Math.max(bySource[day] || 0, reading.minutes[day]);
     if (bySource[day] == null) addedDays++;
     bySource[day] = next;
+  }
+
+  /*
+   * What this file is evidence *about*, which is more than what is in it.
+   *
+   * From its earliest record to the day it was written: an export taken on the
+   * 30th holds everything up to the 30th, so a quiet day inside that stretch is
+   * a day nobody trained rather than a day nobody kept.
+   */
+  if (reading.records.length) {
+    /* The earliest and latest days in the file, found rather than assumed:
+       Syllogimous stores its history newest-first, so taking the first record's
+       day started the span at the wrong end and threw away three weeks of it. */
+    var earliest = reading.records[0].day;
+    var latest = reading.records[0].day;
+    for (var n = 1; n < reading.records.length; n++) {
+      var d = reading.records[n].day;
+      if (d < earliest) earliest = d;
+      if (d > latest) latest = d;
+    }
+
+    const from = earliest;
+    const to = writtenOn && writtenOn > latest ? writtenOn : latest;
+    archive.coverage = archive.coverage || {};
+    archive.coverage[reading.source] =
+      mergeSpans((archive.coverage[reading.source] || []).concat([[from, to]]));
   }
 
   archive.imports.push({
@@ -220,6 +293,7 @@ function cacheLoad() {
 if (typeof module !== "undefined") {
   module.exports = {
     emptyArchive: emptyArchive, fold: fold, days: days, dayRow: dayRow,
+    mergeSpans: mergeSpans, covered: covered, nextDay: nextDay,
     overlap: overlap, isoWeek: isoWeek, sourceSummary: sourceSummary,
     cacheSave: cacheSave, cacheLoad: cacheLoad, CACHE_KEY: CACHE_KEY,
   };

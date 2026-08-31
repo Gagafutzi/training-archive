@@ -81,6 +81,37 @@ function exportsOnDisk() {
   return found.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
 }
 
+/**
+ * When an export was taken, which bounds what it is evidence about.
+ *
+ * **The filename first, and the file's own timestamp last.** An export lands in
+ * Downloads and gets moved to Dokumente months later, and moving it rewrites
+ * `mtime` — so trusting the filesystem here claimed that a January export
+ * covered everything up to April, and every quiet day in between would have
+ * been drawn as a day nobody trained. It is the exact mistake this coverage
+ * tracking exists to prevent, made by the tracking itself.
+ *
+ * A live reading has no filename to read and no staleness to worry about: it is
+ * current as of now.
+ */
+function writtenOn(file) {
+  const name = path.basename(file);
+
+  const inName = /(\d{4})-(\d{2})-(\d{2})/.exec(name);
+  if (inName) return inName[0];
+
+  // RNB says so inside; Anki's reader is live.
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (parsed && typeof parsed.exportedAt === "string") return parsed.exportedAt.slice(0, 10);
+    if (parsed && typeof parsed.generatedAt === "string") return parsed.generatedAt.slice(0, 10);
+  } catch (e) { /* fall through */ }
+
+  try {
+    return new Date(fs.statSync(file).mtimeMs).toISOString().slice(0, 10);
+  } catch (e) { return undefined; }
+}
+
 function ankiSource() {
   const out = path.join(os.tmpdir(), "training-archive-anki-source.json");
   try {
@@ -174,7 +205,7 @@ function main() {
       continue;
     }
 
-    const out = A.fold(archive, reading, path.basename(file));
+    const out = A.fold(archive, reading, path.basename(file), writtenOn(file));
     if (out.added || out.updated) {
       say("   " + path.basename(file).padEnd(40) + " " + reading.source.padEnd(12)
         + " +" + out.added + " new, " + out.updated + " updated");

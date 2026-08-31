@@ -85,6 +85,9 @@ function drawAll() {
 
   push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="ui-sans-serif, system-ui, sans-serif">`);
   push(`<rect width="${W}" height="${H}" fill="#0d1117"/>`);
+  push(`<defs><pattern id="nodata" width="7" height="7" patternUnits="userSpaceOnUse"`
+    + ` patternTransform="rotate(45)"><rect width="7" height="7" fill="#11161f"/>`
+    + `<line x1="0" y1="0" x2="0" y2="7" stroke="#232b36" stroke-width="2"/></pattern></defs>`);
   push(`<text x="${M.left}" y="26" fill="#d7dee8" font-size="15" font-weight="600">Training archive — minutes per day</text>`);
 
   const totalMin = sources.reduce((a, s) =>
@@ -115,6 +118,31 @@ function drawAll() {
     push(`<text x="${M.left - 10}" y="${y1 - rowH + 12}" fill="#d7dee8" font-size="12" text-anchor="end" font-weight="600">${esc(source)}</text>`);
     push(`<text x="${M.left - 10}" y="${y1 - rowH + 27}" fill="#7d8ca6" font-size="10" text-anchor="end">${dayCount} days</text>`);
     push(`<text x="${M.left - 10}" y="${y1 - rowH + 40}" fill="#7d8ca6" font-size="10" text-anchor="end">${Math.round(total / 60)} h</text>`);
+    /*
+     * Where nobody was watching, hatched rather than blank.
+     *
+     * A gap in a bar chart reads as "trained nothing", and here it usually is
+     * not: it is a stretch no surviving export covers. Reported by the person
+     * whose record it is, whose quiet months were months of training whose
+     * files are gone — so the chart has to be able to say "no data" in a way
+     * that does not look like zero.
+     */
+    const spans = (archive.coverage || {})[source] || [];
+    let cursor = t0;
+    const holes = [];
+    for (const [from, to] of spans.map(sp => [at(sp[0]), at(sp[1])]).sort((a, b) => a[0] - b[0])) {
+      if (from > cursor) holes.push([cursor, Math.min(from, t1)]);
+      cursor = Math.max(cursor, to);
+    }
+    if (cursor < t1) holes.push([cursor, t1]);
+
+    for (const [from, to] of holes) {
+      if (to <= from) continue;
+      push(`<rect x="${x(from).toFixed(1)}" y="${(y1 - rowH).toFixed(1)}"`
+        + ` width="${(x(to) - x(from)).toFixed(1)}" height="${rowH}"`
+        + ` fill="url(#nodata)"/>`);
+    }
+
     push(`<line x1="${M.left}" y1="${y1}" x2="${W - M.right}" y2="${y1}" stroke="#272e38"/>`);
     push(`<text x="${W - M.right}" y="${y1 - rowH + 12}" fill="#586074" font-size="9" text-anchor="end">peak ${Math.round(peak)} min</text>`);
 
@@ -140,9 +168,11 @@ function drawAll() {
       + ` width="${barW.toFixed(1)}" height="${n >= 3 ? 22 : 14}" fill="#3fb950" opacity="${n >= 3 ? 1 : 0.7}"/>`);
   }
 
-  push(`<text x="${M.left}" y="${H - 14}" fill="#586074" font-size="10">`
+  push(`<text x="${M.left}" y="${H - 30}" fill="#586074" font-size="10">`
     + `${overlapDays} day(s) carry two sources or more — a taller mark is three. `
     + `Every cross-app comparison is gated on these, and wants about twenty weeks of them.</text>`);
+  push(`<text x="${M.left}" y="${H - 16}" fill="#586074" font-size="10">`
+    + `Hatched means no surviving export covers that stretch — not a quiet week, an unrecorded one.</text>`);
 
   push(`</svg>`);
 
