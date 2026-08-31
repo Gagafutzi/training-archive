@@ -48,6 +48,112 @@ const MIN_ITEMS_FOR_LINE = Number(opt("min-items", 10));
 
 const archive = JSON.parse(fs.readFileSync(ARCHIVE, "utf8"));
 
+/* ---------------------------------------------------------------- everything */
+
+/**
+ * Every source on one time axis, one row each, with the days that carry two or
+ * more marked underneath.
+ *
+ * This is the picture the archive exists to make: not how any one trainer went,
+ * but whether they were being trained *in the same weeks*. Every cross-app
+ * question there will ever be is gated on that strip at the bottom, and reading
+ * it off a table of numbers is much harder than seeing where the columns line
+ * up.
+ */
+function drawAll() {
+  const sources = Object.keys(archive.minutes).sort();
+  if (!sources.length) { console.error("Nothing in the archive."); process.exit(1); }
+
+  const allDays = new Set();
+  for (const s of sources) for (const d in archive.minutes[s]) allDays.add(d);
+  const days = [...allDays].sort();
+  const at = (d) => Date.parse(d + "T00:00:00Z");
+
+  const W = 940;
+  const rowH = 64, gap = 16, stripH = 34;
+  const M = { top: 52, right: 24, bottom: 54, left: 96 };
+  const H = M.top + sources.length * (rowH + gap) + stripH + M.bottom;
+
+  const t0 = at(days[0]), t1 = at(days[days.length - 1]);
+  const span = Math.max(1, t1 - t0);
+  const x = (ms) => M.left + ((ms - t0) / span) * (W - M.left - M.right);
+  const barW = Math.max(2, Math.min(10, (W - M.left - M.right) / (span / 86400000) - 0.5));
+
+  const out = [];
+  const push = (l) => out.push(l);
+  const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="ui-sans-serif, system-ui, sans-serif">`);
+  push(`<rect width="${W}" height="${H}" fill="#0d1117"/>`);
+  push(`<text x="${M.left}" y="26" fill="#d7dee8" font-size="15" font-weight="600">Training archive — minutes per day</text>`);
+
+  const totalMin = sources.reduce((a, s) =>
+    a + Object.values(archive.minutes[s]).reduce((b, m) => b + m, 0), 0);
+  push(`<text x="${W - M.right}" y="26" fill="#7d8ca6" font-size="12" text-anchor="end">`
+    + `${archive.records.length} records · ${days.length} days · ${Math.round(totalMin / 60)} hours</text>`);
+
+  /* Month rules, so a gap has something to be a gap against. */
+  for (let m = new Date(t0); m.getTime() <= t1; m.setUTCMonth(m.getUTCMonth() + 1)) {
+    const first = Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), 1);
+    if (first < t0 || first > t1) continue;
+    push(`<line x1="${x(first).toFixed(1)}" y1="${M.top - 12}" x2="${x(first).toFixed(1)}" y2="${H - M.bottom + 6}" stroke="#272e38"/>`);
+    push(`<text x="${(x(first) + 4).toFixed(1)}" y="${H - M.bottom + 22}" fill="#7d8ca6" font-size="11">`
+      + new Date(first).toLocaleDateString("en-GB", { month: "short", year: "2-digit", timeZone: "UTC" }) + `</text>`);
+  }
+
+  const colours = { anki: "#a371f7", rnb: "#f0883e", syllogimous: "#58a6ff" };
+
+  sources.forEach((source, i) => {
+    const y1 = M.top + i * (rowH + gap) + rowH;
+    const mins = archive.minutes[source];
+    const peak = Math.max(...Object.values(mins));
+    const colour = colours[source] || "#3fb950";
+
+    const dayCount = Object.keys(mins).length;
+    const total = Object.values(mins).reduce((a, b) => a + b, 0);
+
+    push(`<text x="${M.left - 10}" y="${y1 - rowH + 12}" fill="#d7dee8" font-size="12" text-anchor="end" font-weight="600">${esc(source)}</text>`);
+    push(`<text x="${M.left - 10}" y="${y1 - rowH + 27}" fill="#7d8ca6" font-size="10" text-anchor="end">${dayCount} days</text>`);
+    push(`<text x="${M.left - 10}" y="${y1 - rowH + 40}" fill="#7d8ca6" font-size="10" text-anchor="end">${Math.round(total / 60)} h</text>`);
+    push(`<line x1="${M.left}" y1="${y1}" x2="${W - M.right}" y2="${y1}" stroke="#272e38"/>`);
+    push(`<text x="${W - M.right}" y="${y1 - rowH + 12}" fill="#586074" font-size="9" text-anchor="end">peak ${Math.round(peak)} min</text>`);
+
+    for (const day in mins) {
+      const h = Math.max(1, (mins[day] / peak) * (rowH - 6));
+      push(`<rect x="${(x(at(day)) - barW / 2).toFixed(1)}" y="${(y1 - h).toFixed(1)}"`
+        + ` width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${colour}" opacity="0.9"/>`);
+    }
+  });
+
+  /* ---- the strip: days that carry more than one source ---- */
+
+  const stripY = M.top + sources.length * (rowH + gap) + 8;
+  push(`<text x="${M.left - 10}" y="${stripY + 14}" fill="#3fb950" font-size="11" text-anchor="end" font-weight="600">both</text>`);
+  push(`<text x="${M.left - 10}" y="${stripY + 27}" fill="#7d8ca6" font-size="10" text-anchor="end">or more</text>`);
+
+  let overlapDays = 0;
+  for (const day of days) {
+    const n = sources.filter(s => (archive.minutes[s][day] || 0) >= 1).length;
+    if (n < 2) continue;
+    overlapDays++;
+    push(`<rect x="${(x(at(day)) - barW / 2).toFixed(1)}" y="${stripY}"`
+      + ` width="${barW.toFixed(1)}" height="${n >= 3 ? 22 : 14}" fill="#3fb950" opacity="${n >= 3 ? 1 : 0.7}"/>`);
+  }
+
+  push(`<text x="${M.left}" y="${H - 14}" fill="#586074" font-size="10">`
+    + `${overlapDays} day(s) carry two sources or more — a taller mark is three. `
+    + `Every cross-app comparison is gated on these, and wants about twenty weeks of them.</text>`);
+
+  push(`</svg>`);
+
+  fs.writeFileSync(OUT, out.join("\n"));
+  console.log(`${sources.length} sources, ${days.length} days, ${overlapDays} with two or more`);
+  console.log("Written to " + OUT);
+  process.exit(0);
+}
+
+if (SOURCE === "all") drawAll();
+
 const records = archive.records.filter(r => {
   if (r.source !== SOURCE) return false;
   if (!ORIGIN) return true;

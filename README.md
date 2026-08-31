@@ -101,9 +101,20 @@ reading is the one left standing.
 ## Charts
 
 ```
+node tools/chart.js --source all --out all.svg              # every source, one axis
+node tools/chart.js --source syllogimous --out syl.svg      # one source, in detail
 node tools/chart.js --source syllogimous --origin 4skinskywalker --out v4.svg
-node tools/chart.js --source anki --out anki.svg
 ```
+
+`--source all` is the one the archive exists to draw: a row per source on a
+shared time axis, with the days carrying two or more marked underneath. That
+strip is what every cross-app question is gated on, and where the columns line up
+is much easier to see than to read off a table.
+
+Note that `--origin` only matches records that *have* an origin, which means the
+ones read out of browser storage. A record that came from an export file carries
+none, so filtering by origin quietly excludes it — on this machine that was 1639
+of 2753 Syllogimous items.
 
 A standalone SVG per source: items per day above, accuracy and mean difficulty
 below. No chart library — the whole of what it draws is rectangles and lines, and
