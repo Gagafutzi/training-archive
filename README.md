@@ -80,6 +80,33 @@ twice.
 Exports are folded oldest first, so where two disagree about one record the newer
 reading is the one left standing.
 
+## Reading the browser directly
+
+The page's own "Read this browser" button can only see the origin it is *served
+from*. Opened as a `file://` page it has its own isolated storage and finds
+nothing — that is not a permission problem and granting something cannot fix it.
+
+`tools/firefox-storage.py` goes around it by reading Firefox's own storage off
+disk. Every origin's localStorage is a SQLite database under
+`storage/default/<origin>/ls/data.sqlite`, so the trainers' *live* records can be
+snapshotted with no export at all, and no browser running. `tools/build.js` calls
+it for you.
+
+That is the part that makes a reset survivable without anybody remembering
+anything: an export only exists if it was made, and the moment nobody makes one
+is the moment they are about to clear site data to fix a bug.
+
+Firefox stores larger values Snappy-compressed. Python has no Snappy in its
+standard library, so the raw format is implemented in that file — small, and a
+better trade than a dependency in a project whose one promise is that it still
+runs in five years. Chromium keeps its localStorage in LevelDB instead, which is
+not implemented.
+
+Records carry the **origin** they came from in `raw.origin`. The original v4, a
+fork, a dev server and your deployed copy all write the same keys and are not the
+same app; they stay one source so the day counting is not fragmented, and the
+tag is there for any analysis that needs them apart.
+
 ## Anki
 
 Anki keeps its reviews in a SQLite database, so the reading happens outside the

@@ -47,6 +47,13 @@ function readSyllogimous(data) {
   var raw = data && typeof data === "object" ? data.SYL_HISTORY : null;
   if (typeof raw !== "string") return null;
 
+  /* Which build these came from, when whatever produced the file knows.
+     The original v4, a fork, a dev server and the deployed copy all write
+     these keys and are not the same app — so the records stay one source,
+     because the day counting should not fragment, and carry the origin so an
+     analysis that needs them apart can have them apart. */
+  var origin = typeof data.__origin === "string" ? data.__origin : null;
+
   var history;
   try { history = JSON.parse(raw); } catch (e) { return null; }
   if (!Array.isArray(history)) return null;
@@ -87,6 +94,7 @@ function readSyllogimous(data) {
       unit: "syllogimous-premises",
       label: q.type || "unknown",
       raw: {
+        origin: origin,
         answerMode: q.answerMode || "boolean",
         negations: q.negations || 0,
         metaRelations: q.metaRelations || 0,
@@ -138,6 +146,8 @@ function readRnb(file) {
   var data = file && file.data ? file.data : file;
   if (!data || !Array.isArray(data.blocks)) return null;
 
+  var origin = file && typeof file.__origin === "string" ? file.__origin : null;
+
   var records = [];
   for (var i = 0; i < data.blocks.length; i++) {
     var b = data.blocks[i];
@@ -160,6 +170,7 @@ function readRnb(file) {
       unit: "rnb-load",
       label: (b.mode || "?") + "/" + Object.keys(cfg.streams || {}).sort().join("+"),
       raw: {
+        origin: origin,
         build: b.build || null,
         n: b.n, rc: b.rc, rcTier: b.rcTier,
         interrupted: !!b.interrupted,

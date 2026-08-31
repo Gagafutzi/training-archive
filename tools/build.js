@@ -45,6 +45,7 @@ const SOURCES = {
     /^rnb-.*\.json$/,
   ],
   ankiScript: path.join(__dirname, "anki-export.py"),
+  firefoxScript: path.join(__dirname, "firefox-storage.py"),
 };
 
 function say(line) { process.stdout.write(line + "\n"); }
@@ -79,6 +80,38 @@ function ankiSource() {
   }
 }
 
+/**
+ * The trainers' *live* storage, read off disk rather than exported.
+ *
+ * This is the part that makes a reset survivable without anybody remembering
+ * anything. An export only exists if it was made, and the moment nobody makes
+ * one is the moment they are about to clear site data to fix a bug.
+ *
+ * Returns a directory of files in each app's own export format, so the ordinary
+ * adapters read them and nothing here knows where they came from.
+ */
+function liveStorage() {
+  const out = path.join(os.tmpdir(), "training-archive-live");
+  try {
+    fs.rmSync(out, { recursive: true, force: true });
+  } catch (e) { /* first run */ }
+
+  try {
+    const log = execFileSync("python3", [SOURCES.firefoxScript, "--outdir", out],
+      { encoding: "utf8" });
+    log.trim().split("\n").filter(Boolean).forEach(l => say("   " + l.trim()));
+  } catch (e) {
+    say("   (nothing read from the browser: " + String(e.message).split("\n")[0] + ")");
+    return [];
+  }
+
+  try {
+    return fs.readdirSync(out).map(n => path.join(out, n));
+  } catch (e) {
+    return [];
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Building                                                            *
  * ------------------------------------------------------------------ */
@@ -104,11 +137,16 @@ function main() {
   say("\nAnki");
   const anki = ankiSource();
 
+  say("\nLive browser storage");
+  const live = liveStorage();
+
   say("\nExports in " + SOURCES.downloads);
   const files = exportsInDownloads();
   if (!files.length) say("   (none found)");
 
-  const all = files.concat(anki ? [anki] : []);
+  /* Exports first, live storage last: where the two disagree about one record
+     the live one is current, and the merge keeps whichever arrives later. */
+  const all = files.concat(anki ? [anki] : []).concat(live);
   for (const file of all) {
     let reading;
     try {
