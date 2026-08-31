@@ -273,6 +273,8 @@ for (const at of months) {
 /* ---- panel one: how much ---- */
 
 push(`<text x="${M.left}" y="${topY0 - 10}" fill="#7d8ca6" font-size="11" letter-spacing="0.06em">ITEMS PER DAY</text>`);
+push(`<text x="${W - M.right}" y="${topY0 - 10}" fill="#586074" font-size="10" text-anchor="end">`
+  + `progress is the orange line, not the green one — see below</text>`);
 push(`<line x1="${M.left}" y1="${topY1}" x2="${W - M.right}" y2="${topY1}" stroke="#39424f"/>`);
 
 for (const tick of [0, 0.5, 1]) {
@@ -288,8 +290,23 @@ for (const d of days) {
 
 /* ---- panel two: how it went ---- */
 
+/*
+ * Which of these two lines is the progress line.
+ *
+ * Accuracy is what an adaptive trainer *holds constant*: it aims at a target —
+ * 80% here — and moves the difficulty until it gets there. So a flat green line
+ * means the controller is working, and says nothing whatever about whether the
+ * player improved. The orange line is where improvement shows up, because it is
+ * what had to rise to keep the green one still.
+ *
+ * Drawing them as a matched pair invites reading the prominent one as the
+ * outcome, which is backwards. Hence the label: raised as a question by the
+ * person looking at their own chart and concluding, reasonably and wrongly,
+ * that they had stagnated.
+ */
 push(`<text x="${M.left}" y="${botY0 - 10}" fill="#7d8ca6" font-size="11" letter-spacing="0.06em">`
-  + `ACCURACY <tspan fill="#3fb950">●</tspan>   AND MEAN PREMISES <tspan fill="#f0883e">●</tspan></text>`);
+  + `<tspan fill="#f0883e">●</tspan> DIFFICULTY — THE PROGRESS LINE`
+  + `   <tspan fill="#3fb950">●</tspan> ACCURACY — HELD NEAR TARGET BY THE MODEL</text>`);
 push(`<line x1="${M.left}" y1="${botY1}" x2="${W - M.right}" y2="${botY1}" stroke="#39424f"/>`);
 
 for (const tick of [0, 0.5, 1]) {
@@ -326,8 +343,10 @@ for (const d of days) {
     + ` fill="#3fb950" opacity="${faint ? 0.35 : 0.95}"/>`);
 }
 
-push(`<text x="${M.left}" y="${H - 12}" fill="#586074" font-size="10">`
+push(`<text x="${M.left}" y="${H - 24}" fill="#586074" font-size="10">`
   + `dot size is the day's item count — a faint dot is fewer than ${MIN_ITEMS_FOR_LINE} items and carries no line</text>`);
+push(`<text x="${M.left}" y="${H - 11}" fill="#586074" font-size="10">`
+  + `a flat accuracy line is the model doing its job; improvement is the difficulty it had to raise to keep it flat</text>`);
 
 push(`</svg>`);
 
