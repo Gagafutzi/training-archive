@@ -93,6 +93,29 @@ twice.
 Exports are folded oldest first, so where two disagree about one record the newer
 reading is the one left standing.
 
+## Charts
+
+```
+node tools/chart.js --source syllogimous --origin 4skinskywalker --out v4.svg
+node tools/chart.js --source anki --out anki.svg
+```
+
+A standalone SVG per source: items per day above, accuracy and mean difficulty
+below. No chart library — the whole of what it draws is rectangles and lines, and
+a dependency is a thing that stops working while you are not looking.
+
+Two of its choices are about honesty rather than looks:
+
+**A real time axis.** Days sit where their dates are, not side by side. Training
+happens in bursts with weeks of nothing between them, and evenly spacing the days
+you trained turns a three-month record into a smooth run and makes an
+interruption invisible.
+
+**Accuracy carries its sample size.** A day with one item answered wrongly is 0%,
+and plotted like any other point it reads as a collapse — where what happened is
+that somebody opened the page, got one question wrong and closed it. Dots are
+sized by the day's item count and the line only joins days above `--min-items`.
+
 ## Reading the browser directly
 
 The page's own "Read this browser" button can only see the origin it is *served
