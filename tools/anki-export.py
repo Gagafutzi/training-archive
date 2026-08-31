@@ -57,18 +57,47 @@ MAX_REVIEW_SECONDS = 60
 REVIEW_TYPES = {0, 1, 2, 3}
 
 
-def find_collection():
-    """The usual places, newest first. Anki keeps one file per profile."""
-    roots = [
-        os.path.expanduser("~/.local/share/Anki2"),          # Linux
-        os.path.expanduser("~/Library/Application Support/Anki2"),  # macOS
-        os.path.expandvars(r"%APPDATA%\Anki2"),              # Windows
-    ]
+# Where Anki keeps collections, one directory per profile.
+#
+# The packaged Linux builds are the reason this list is long. Snap and Flatpak
+# both confine the app to their own home, so an Anki installed either way keeps
+# its collection nowhere near `~/.local/share/Anki2` — and the classic directory
+# is often still there from an older install, holding a stale profile that looks
+# perfectly plausible. Reading the wrong one is not an error you notice: it
+# reports a real collection with real reviews, just not yours.
+COLLECTION_ROOTS = [
+    "~/.local/share/Anki2",                                   # Linux, classic
+    "~/snap/anki-desktop/common",                             # Linux, snap
+    "~/.var/app/net.ankiweb.Anki/data/Anki2",                 # Linux, flatpak
+    "~/Library/Application Support/Anki2",                    # macOS
+    os.path.expandvars(r"%APPDATA%\Anki2"),                   # Windows
+]
+
+
+def find_collections():
+    """Every collection on this machine, newest first.
+
+    All of them, not the likeliest one: a person can have a profile per subject
+    — one for a language, one for an exam — and their studying is the sum of
+    those, not whichever was touched last.
+    """
     found = []
-    for root in roots:
-        found.extend(glob.glob(os.path.join(root, "*", "collection.anki2")))
-    found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return found
+    for root in COLLECTION_ROOTS:
+        found.extend(glob.glob(os.path.join(os.path.expanduser(root), "*", "collection.anki2")))
+
+    # Deduplicate by real path, since a symlinked or bind-mounted home can
+    # otherwise present the same collection twice and double every review.
+    seen = set()
+    unique = []
+    for path in found:
+        real = os.path.realpath(path)
+        if real in seen:
+            continue
+        seen.add(real)
+        unique.append(path)
+
+    unique.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return unique
 
 
 def deck_names(con):
@@ -103,8 +132,14 @@ def deck_names(con):
     return names
 
 
-def read_reviews(path):
+def profile_name(path):
+    """The profile is the directory the collection sits in."""
+    return os.path.basename(os.path.dirname(path))
+
+
+def read_reviews(path, label_profile=False):
     """Every review, as archive records."""
+    profile = profile_name(path)
     tmp = os.path.join(tempfile.gettempdir(), "training-archive-anki.anki2")
     shutil.copy2(path, tmp)
 
@@ -155,7 +190,9 @@ def read_reviews(path):
             # else's.
             "difficulty": None,
             "unit": None,
-            "label": decks.get(did, "unknown deck"),
+            # Profile first when there is more than one, since "Chemie" in an
+            # exam profile and "Chemie" in a general one are different study.
+            "label": (profile + "::" if label_profile else "") + decks.get(did, "unknown deck"),
             "raw": {
                 "ease": ease,
                 "type": rtype,
@@ -173,26 +210,45 @@ def read_reviews(path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--collection", help="path to collection.anki2")
+    ap.add_argument("--collection", action="append",
+                    help="path to a collection.anki2 (repeatable); default is every one found")
     ap.add_argument("--out", default="anki-source.json", help="where to write the JSON")
     args = ap.parse_args()
 
-    path = args.collection
-    if not path:
-        found = find_collection()
-        if not found:
-            raise SystemExit("No Anki collection found. Pass --collection.")
-        path = found[0]
-        if len(found) > 1:
-            print("Several profiles found; using the most recent:")
-            for p in found:
-                print("   ", p)
+    paths = args.collection or find_collections()
+    if not paths:
+        raise SystemExit("No Anki collection found. Pass --collection.")
 
-    print("Reading %s" % path)
-    records, minutes = read_reviews(path)
+    label_profile = len(paths) > 1
+    records = []
+    minutes = {}
+    empty = []
+
+    for path in paths:
+        print("Reading %s" % path)
+        got, mins = read_reviews(path, label_profile)
+        if not got:
+            empty.append(path)
+            continue
+
+        records.extend(got)
+        # Summed across profiles, not maxed: two profiles studied on one day are
+        # two separate stretches of study. (Merging two *files* still takes the
+        # larger, since those are two readings of the same thing.)
+        for day, m in mins.items():
+            minutes[day] = minutes.get(day, 0.0) + m
+
+        days = sorted(mins)
+        print("   %-24s %5d reviews, %s to %s, %.0f min"
+              % (profile_name(path), len(got), days[0], days[-1], sum(mins.values())))
+
+    for path in empty:
+        print("   %-24s no reviews" % profile_name(path))
 
     if not records:
-        raise SystemExit("No reviews in that collection.")
+        raise SystemExit("No reviews in any collection found.")
+
+    records.sort(key=lambda r: r["at"])
 
     payload = {
         "schema": "training-archive-source/1",
@@ -206,18 +262,17 @@ def main():
         json.dump(payload, fh, indent=1)
 
     days = sorted(minutes)
-    print("%d reviews over %d days (%s to %s), %.0f minutes in total"
+    print("\n%d reviews over %d days (%s to %s), %.0f minutes in total"
           % (len(records), len(days), days[0], days[-1], sum(minutes.values())))
     print("Written to %s — drop it on the archive page." % args.out)
 
-    # A stale collection is worth saying out loud: the usual cause is that the
-    # real studying happens on another device and this profile is a leftover.
+    # A stale record is worth saying out loud rather than leaving to be noticed:
+    # the usual cause is that the studying happens somewhere this cannot see.
     newest = datetime.datetime.utcfromtimestamp(records[-1]["at"] / 1000.0)
     age = (datetime.datetime.utcnow() - newest).days
     if age > 30:
-        print("Note: the most recent review here is %d days old. If you study on "
-              "a phone or through AnkiWeb, this profile is not where that lands."
-              % age)
+        print("Note: the most recent review found is %d days old. If you study on "
+              "a phone or through AnkiWeb, that is not where it lands." % age)
 
 
 if __name__ == "__main__":

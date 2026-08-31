@@ -71,6 +71,15 @@ python3 tools/anki-export.py            # finds your collection
 It writes `anki-source.json`; drop that on the page. Python's standard library
 has `sqlite3`, so there is nothing to install.
 
+**It reads every collection it can find, not the likeliest one.** The packaged
+Linux builds are why that matters: Snap and Flatpak each confine Anki to their
+own home, so a collection lives nowhere near `~/.local/share/Anki2` — while that
+classic directory is often still sitting there from an older install, holding a
+stale profile that looks perfectly plausible. Reading the wrong one is not a
+failure you notice; it reports a real collection with real reviews, just not
+yours. It also reads every *profile*, since a profile per subject is a normal way
+to use Anki and your studying is the sum of them.
+
 It reads **only the review log** — when each review happened, how long it took,
 and whether the card came back — plus deck names. It never opens `notes`, so no
 card content, question, answer or media reaches the archive. That matters because
