@@ -165,6 +165,22 @@ next question, clamped at five minutes. That is a real measure of time on task,
 and honestly a better one than a self-reported duration — right up until somebody
 walks away mid-session, which is what the clamp is for.
 
+**Syllogimous keeps everything.** `raw.item` is the stored question untouched —
+all 36 fields — and `archive.state` keeps every non-history key each export
+carried, snapshotted by the day it was taken: the ability estimates, the trial
+log, the Customise overrides, the progression config.
+
+That was a curated handful of fields to begin with, on the argument that a
+stored question is mostly rendered HTML. The argument is right about size and
+wrong about archives: what you cannot do later is recover a field you decided not
+to keep, and every analysis here has wanted something nobody thought to save. The
+trial log is the sharpest case — it holds the ability estimate at the moment each
+item was chosen, the only place that number is ever written down, and being
+per-export rather than per-item it could never have been a record.
+
+The other adapters are still selective, and the same argument applies to them
+whenever it matters enough.
+
 Records carry the **origin** they came from in `raw.origin`. The original v4, a
 fork, a dev server and your deployed copy all write the same keys and are not the
 same app; they stay one source so the day counting is not fragmented, and the
