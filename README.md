@@ -13,6 +13,19 @@ exactly how two trainers came to have six days of history between them.
 So the file is the archive and this page is the tool that maintains it. Drop
 exports in, take the archive out, keep it somewhere that is not a browser.
 
+## The loop
+
+```
+node tools/build.js                     # gather everything on this machine
+```
+
+then open `index.html` and drop `~/training-archive.json` on it. The page caches
+what it reads, so it is there next time without dropping it again — until you
+clear site data, which is the day the file earns its keep.
+
+Run the build after a training session, or before a reset, or on a schedule. It
+is idempotent: running it twice costs nothing and changes nothing.
+
 ## Using it
 
 - **Drop any export** on the page. Sources are recognised by the *shape* of the

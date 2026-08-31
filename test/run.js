@@ -276,6 +276,95 @@ if (!fs.existsSync(ANKI)) {
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * The page itself                                                     *
+ * ------------------------------------------------------------------ */
+
+/**
+ * That `app.js` renders an archive without throwing.
+ *
+ * It is the only thing standing between a real archive and a blank page, and a
+ * blank page is what a `ReferenceError` in a plain script looks like — no build
+ * step means no compiler to catch a renamed function, and the browser reports it
+ * to a console nobody has open.
+ *
+ * The DOM here is the smallest one the page's render path actually touches.
+ * Faithful enough to catch a missing element or a bad call, and honest about
+ * what it is not: it says nothing about how any of it looks.
+ */
+test("the page renders an archive without throwing", () => {
+  const vm = require("vm");
+
+  /* `appendChild` accumulates into innerHTML, because the render path builds
+     its cards as elements and the assertions below are about what a reader
+     would end up seeing. A stub that swallowed appended children would report
+     an empty page for a page that works. */
+  const el = () => ({
+    innerHTML: "", textContent: "", className: "", disabled: false,
+    firstChild: null, files: [],
+    appendChild(child) { this.innerHTML += child.innerHTML; },
+    insertBefore(child) { this.innerHTML += child.textContent; },
+    addEventListener() {},
+    classList: { add() {}, remove() {} },
+  });
+  const nodes = {};
+  for (const id of ["log", "save", "sources", "overlap", "days", "file", "neighbours", "drop"]) {
+    nodes[id] = el();
+  }
+
+  let onReady = null;
+  const ctx = {
+    console: { log() {} },
+    document: {
+      getElementById: (id) => nodes[id] || null,
+      createElement: () => el(),
+    },
+    localStorage: { getItem: () => null, setItem() {}, key: () => null, length: 0 },
+    Date, JSON, Math, Number, String, Object, Array, Blob: function () {},
+    URL: { createObjectURL: () => "", revokeObjectURL() {} },
+    setTimeout: () => 0,
+    FileReader: function () {},
+  };
+  ctx.window = {
+    addEventListener: (type, fn) => { if (type === "DOMContentLoaded") onReady = fn; },
+  };
+  vm.createContext(ctx);
+
+  const strip = (f) => fs.readFileSync(path.join(__dirname, "..", f), "utf8")
+    // The page loads these as script tags, where `require` does not exist.
+    .replace(/typeof require === "function"/g, "false");
+
+  for (const f of ["js/record.js", "js/adapters.js", "js/archive.js", "js/app.js"]) {
+    vm.runInContext(strip(f), ctx, { filename: f });
+  }
+
+  assert.ok(onReady, "app.js never asked to run when the page was ready");
+  onReady();                                   // wiring: must not throw
+
+  // A real archive through the real render path.
+  const archive = A.emptyArchive();
+  A.fold(archive, {
+    source: "syllogimous",
+    records: [makeRecord({ source: "syllogimous", id: "1", at: Date.UTC(2026, 7, 25),
+      seconds: 30, correct: 1, difficulty: 4, unit: "syllogimous-premises", label: "Distinction" })],
+    minutes: { "2026-08-25": 40 },
+  }, "a");
+  A.fold(archive, {
+    source: "rnb",
+    records: [makeRecord({ source: "rnb", id: "2", at: Date.UTC(2026, 7, 25),
+      kind: "block", seconds: 50, correct: 0.8, difficulty: 41, unit: "rnb-load", label: "progression" })],
+    minutes: { "2026-08-25": 20 },
+  }, "b");
+
+  ctx.archive = archive;
+  ctx.render();
+
+  assert.ok(nodes.days.innerHTML.includes("2026-08-25"), "the day table is empty");
+  assert.ok(nodes.sources.innerHTML.includes("syllogimous"), "the sources are empty");
+  assert.ok(nodes.overlap.innerHTML.includes("of 20"), "the overlap gate says nothing");
+  assert.strictEqual(nodes.save.disabled, false, "the download button stayed disabled");
+});
+
 /* ------------------------------------------------------------------ */
 
 for (const [name, fn] of cases) {
