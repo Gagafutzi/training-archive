@@ -220,6 +220,10 @@ function readRnb(file) {
       difficulty: b.load == null ? null : Number(b.load),
       unit: "rnb-load",
       label: (b.mode || "?") + "/" + Object.keys(cfg.streams || {}).sort().join("+"),
+      /* The whole block, for the reason Syllogimous keeps the whole question:
+         a keypress log is the only record of *when inside a block* it went
+         wrong, and no later export will still have it — RNB sheds `presses`
+         from older blocks the moment its own storage runs short. */
       raw: {
         origin: origin,
         build: b.build || null,
@@ -230,6 +234,7 @@ function readRnb(file) {
         streams: b.streams || null,
         dim: cfg.dim, frame: cfg.frame, interval: cfg.interval,
         blockLength: cfg.blockLength, varN: cfg.varN,
+        block: b,
       },
     }));
   }
@@ -244,7 +249,23 @@ function readRnb(file) {
     if (Object.prototype.hasOwnProperty.call(daily, day)) minutes[day] = Number(daily[day]) || 0;
   }
 
-  return { source: "rnb", records: records, minutes: minutes };
+  /* Everything that is not the blocks: the ladder, the staircase posterior, the
+     per-tier tunables, the free-play config, the best load. The state the blocks
+     were produced under, and per-export rather than per-block, so it cannot be
+     a record either. */
+  var state = {};
+  for (var key in data) {
+    if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
+    if (key === "blocks") continue;
+    state[key] = data[key];
+  }
+
+  return {
+    source: "rnb",
+    records: records,
+    minutes: minutes,
+    state: Object.keys(state).length ? state : null,
+  };
 }
 
 /* ------------------------------------------------------------------ *

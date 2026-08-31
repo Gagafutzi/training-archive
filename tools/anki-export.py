@@ -168,7 +168,7 @@ def read_reviews(path, label_profile=False):
         decks = deck_names(con)
 
         rows = con.execute("""
-            SELECT r.id, r.ease, r.ivl, r.lastIvl, r.factor, r.time, r.type, c.did
+            SELECT r.id, r.ease, r.ivl, r.lastIvl, r.factor, r.time, r.type, c.did, r.cid
             FROM revlog r LEFT JOIN cards c ON c.id = r.cid
             ORDER BY r.id
         """).fetchall()
@@ -181,7 +181,7 @@ def read_reviews(path, label_profile=False):
 
     records = []
 
-    for rid, ease, ivl, last_ivl, factor, time_ms, rtype, did in rows:
+    for rid, ease, ivl, last_ivl, factor, time_ms, rtype, did, cid in rows:
         if rtype not in REVIEW_TYPES:
             continue
 
@@ -212,12 +212,20 @@ def read_reviews(path, label_profile=False):
             # Profile first when there is more than one, since "Chemie" in an
             # exam profile and "Chemie" in a general one are different study.
             "label": (profile + "::" if label_profile else "") + decks.get(did, "unknown deck"),
+            # The whole revlog row. `cid` especially: it is the only thing that
+            # says two reviews were of the *same card*, which is what any
+            # question about a single card's learning curve needs and what no
+            # amount of aggregate accuracy can reconstruct.
             "raw": {
                 "ease": ease,
                 "type": rtype,
                 "interval": ivl,
                 "lastInterval": last_ivl,
                 "factor": factor,
+                "card": cid,
+                "deck": did,
+                "timeMs": time_ms,
+                "profile": profile,
             },
         })
 

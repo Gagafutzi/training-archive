@@ -178,8 +178,15 @@ trial log is the sharpest case — it holds the ability estimate at the moment e
 item was chosen, the only place that number is ever written down, and being
 per-export rather than per-item it could never have been a record.
 
-The other adapters are still selective, and the same argument applies to them
-whenever it matters enough.
+**RNB and Anki keep everything too.** `raw.block` is the whole block including
+its keypress log — which matters because RNB *sheds* `presses` from older blocks
+the moment its own storage runs short, so the archive is the only place that
+survives. `archive.state` holds each export's ladder, staircase posterior,
+per-tier tunables and free-play config.
+
+Anki keeps the whole revlog row, `cid` included. That one is the difference
+between knowing how a day went and being able to follow a single card: nothing
+else says two reviews were of the same card, and no aggregate reconstructs it.
 
 Records carry the **origin** they came from in `raw.origin`. The original v4, a
 fork, a dev server and your deployed copy all write the same keys and are not the
