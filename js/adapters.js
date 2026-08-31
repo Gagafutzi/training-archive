@@ -205,10 +205,14 @@ function readRnb(file) {
     if (!b || !b.ts) continue;
 
     var cfg = b.cfg || {};
-    /* Nominal length: the block's own trials times its interval. RNB does not
-       store a measured duration per block, and its `dailyMinutes` does — so a
-       day's total comes from there and this is only ever the block's share. */
-    var seconds = (Number(cfg.blockLength) || 0) * (Number(cfg.interval) || 0) / 1000;
+    /* Nominal length: the trials it actually ran times its interval. RNB does
+       not store a measured duration per block, and its `dailyMinutes` does — so
+       a day's total comes from there and this is only ever the block's share.
+       An abandoned block ran `trials` of the `plannedTrials` it meant to, and
+       counting it at full length would credit a block somebody walked out of
+       with the time they did not spend on it. */
+    var ran = b.trials != null ? Number(b.trials) : Number(cfg.blockLength);
+    var seconds = (ran || 0) * (Number(cfg.interval) || 0) / 1000;
 
     records.push(_makeRecord({
       source: "rnb",
@@ -234,6 +238,13 @@ function readRnb(file) {
         streams: b.streams || null,
         dim: cfg.dim, frame: cfg.frame, interval: cfg.interval,
         blockLength: cfg.blockLength, varN: cfg.varN,
+        /* Whether it was finished. Everything written before RNB started
+           recording abandoned blocks was a finished one by definition —
+           nothing else was ever stored — so a missing field reads as
+           completed rather than as unknown. */
+        completed: b.completed !== false,
+        trials: b.trials == null ? null : Number(b.trials),
+        plannedTrials: b.plannedTrials == null ? null : Number(b.plannedTrials),
         block: b,
       },
     }));
