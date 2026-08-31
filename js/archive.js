@@ -57,6 +57,20 @@ function emptyArchive() {
      * *watching*.
      */
     coverage: {},
+    /**
+     * What each source's app state was, whenever an export caught it.
+     *
+     * Keyed by source and then by the day the export was written, because it is
+     * a *snapshot* and not a fact about a day: the ability estimates, trial log
+     * and settings an export carries are the ones standing at the moment it was
+     * taken.
+     *
+     * Kept because the one thing an archive cannot do later is recover what it
+     * decided not to keep, and because this is the state the items were served
+     * under — which every analysis of those items eventually wants and no future
+     * export will still contain.
+     */
+    state: {},
   };
 }
 
@@ -135,6 +149,14 @@ function fold(archive, reading, fileName, writtenOn) {
     archive.coverage = archive.coverage || {};
     archive.coverage[reading.source] =
       mergeSpans((archive.coverage[reading.source] || []).concat([[from, to]]));
+  }
+
+  if (reading.state) {
+    archive.state = archive.state || {};
+    var forSource = archive.state[reading.source] || (archive.state[reading.source] = {});
+    // Keyed by when it was taken; a second export the same day replaces it,
+    // being a later look at the same thing.
+    forSource[writtenOn || new Date().toISOString().slice(0, 10)] = reading.state;
   }
 
   archive.imports.push({
@@ -268,6 +290,9 @@ function cacheSave(archive) {
         for (var k in r) if (k !== "raw") c[k] = r[k];
         return c;
       }),
+      // The state snapshots are the bulkiest thing here and the least useful to
+      // a page that draws bars; they live in the file.
+      state: {},
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(slim));
     return true;

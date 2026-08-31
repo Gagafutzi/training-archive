@@ -93,6 +93,23 @@ function readSyllogimous(data) {
       difficulty: Array.isArray(q.premises) ? q.premises.length : null,
       unit: "syllogimous-premises",
       label: q.type || "unknown",
+      /*
+       * **The whole question, kept.**
+       *
+       * This started as a curated handful of fields on the argument that a
+       * stored question is mostly rendered HTML and the archive should not
+       * carry a megabyte of `<span class="subject">` to answer a question about
+       * accuracy. That argument is fine about *size* and wrong about *archives*:
+       * the one thing you cannot do later is recover a field you decided not to
+       * keep, and every analysis in this project so far has wanted something
+       * nobody thought to save — the rungs an item carried, which conclusion of
+       * a series was missed, what the premises actually said.
+       *
+       * So `item` is the question as it was stored, untouched. The named fields
+       * beside it stay because they are what the charts and the merge read, and
+       * a query that has to know a field moved from `depth` to `item.depth`
+       * between versions is a query that breaks silently.
+       */
       raw: {
         origin: origin,
         answerMode: q.answerMode || "boolean",
@@ -108,6 +125,7 @@ function readSyllogimous(data) {
            distinction it was asked to make. */
         presentation: q.gameModeOnAnswer == null ? null : String(q.gameModeOnAnswer),
         claims: Array.isArray(q.series) ? q.series.length : 0,
+        item: q,
       },
     }));
 
@@ -116,7 +134,34 @@ function readSyllogimous(data) {
   }
 
   if (!records.length) return null;
-  return { source: "syllogimous", records: records, minutes: minutes };
+
+  /*
+   * Everything in the export that is not the history.
+   *
+   * The ability estimates, the trial log, the Customise overrides, the
+   * progression config, the thresholds. None of it is per-item, so none of it
+   * can be a record — and all of it is the *state the items were served under*,
+   * which is exactly what a later analysis of those items will want and exactly
+   * what no export after this one will still contain.
+   *
+   * The trial log is the sharpest case. It carries the ability estimate at the
+   * moment each item was chosen, which is the only place that number is ever
+   * written down; drop it and no amount of history says what the model thought
+   * of you at the time.
+   */
+  var state = {};
+  for (var key in data) {
+    if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
+    if (key === "SYL_HISTORY" || key === "__origin") continue;
+    state[key] = data[key];
+  }
+
+  return {
+    source: "syllogimous",
+    records: records,
+    minutes: minutes,
+    state: Object.keys(state).length ? state : null,
+  };
 }
 
 /**
