@@ -59,13 +59,57 @@ against the hypothesis; against control modes, since a lift that appears
 everywhere equally is practice; and with a permutation null shown beside the
 number, along with how many pairs were tested.
 
+## Anki
+
+Anki keeps its reviews in a SQLite database, so the reading happens outside the
+browser:
+
+```
+python3 tools/anki-export.py            # finds your collection
+```
+
+It writes `anki-source.json`; drop that on the page. Python's standard library
+has `sqlite3`, so there is nothing to install.
+
+It reads **only the review log** — when each review happened, how long it took,
+and whether the card came back — plus deck names. It never opens `notes`, so no
+card content, question, answer or media reaches the archive. That matters because
+an archive is a file you might hand to someone, and because none of it would tell
+you anything about your training anyway. The collection is copied before it is
+opened, since Anki holds a lock on the live file.
+
+**No difficulty is recorded for a review, deliberately.** An interval is a
+schedule, not a measure of how hard the review was, and the archive's rule is
+that a difficulty has to mean something in its own units. Inventing one here
+would be the first step towards comparing it with another app's.
+
+One caveat the script prints for itself: if your studying happens on a phone or
+through AnkiWeb, the desktop profile is not where it lands, and the collection it
+finds may be months stale.
+
 ## Adding a source
 
-One function in `js/adapters.js` that takes the parsed file and returns
-`{ source, records, minutes }`, or `null` if the file is not its own. Add it to
-`ADAPTERS`. Records come from `makeRecord`, and a source with no ids of its own
-gets `hashRow` over the row's text so the same row is the same record in every
-export it appears in.
+Two ways, and the second is usually the right one.
+
+**A JSON export you can read in the browser**: one function in `js/adapters.js`
+that takes the parsed file and returns `{ source, records, minutes }`, or `null`
+if the file is not its own. Add it to `ADAPTERS`. Records come from `makeRecord`,
+and a source with no ids of its own gets `hashRow` over the row's text so the same
+row is the same record in every export it appears in.
+
+**Anything else** — a database, a zip, a CSV, a page that has to be scraped —
+gets a script that emits
+
+```json
+{ "schema": "training-archive-source/1", "source": "…", "records": [...], "minutes": {...} }
+```
+
+which the page takes as it stands. `tools/anki-export.py` is the worked example.
+This is the path for the sites you did not write: it keeps their formats out of a
+page whose one structural promise is that it still runs without a toolchain, and
+it means a new source never requires the page to change at all. Prepared files
+are validated rather than trusted — a row with no id or no timestamp is dropped
+and the rest of the file still lands.
 
 ## Tests
 

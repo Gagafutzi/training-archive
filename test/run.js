@@ -19,7 +19,8 @@ const fs = require("fs");
 const path = require("path");
 
 const { mergeRecords, hashRow, makeRecord } = require("../js/record.js");
-const { readFile, readSyllogimous, readRnb } = require("../js/adapters.js");
+const { readFile, readSyllogimous, readRnb, readPrepared } = require("../js/adapters.js");
+const { execFileSync } = require("child_process");
 const A = require("../js/archive.js");
 
 let passed = 0;
@@ -174,6 +175,75 @@ if (!sylFiles.length || !rnbFiles.length) {
     assert.ok(both.days.every(d => (archive.minutes.syllogimous[d] || 0) >= 1
       && (archive.minutes.rnb[d] || 0) >= 1),
       "a day was counted as overlapping with no time in one of the two");
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Prepared sources, and the Anki script that writes one               *
+ * ------------------------------------------------------------------ */
+
+test("a prepared file is taken as it stands", () => {
+  const out = readPrepared({
+    schema: "training-archive-source/1",
+    source: "somewhere",
+    records: [{ id: "a", at: 1700000000000, kind: "review", seconds: 5, correct: 1 }],
+    minutes: { "2023-11-14": 3 },
+  });
+  assert.strictEqual(out.source, "somewhere");
+  assert.strictEqual(out.records.length, 1);
+  assert.strictEqual(out.records[0].day, "2023-11-14");
+});
+
+test("a prepared file with bad rows loses the rows, not the file", () => {
+  const out = readPrepared({
+    schema: "training-archive-source/1",
+    source: "somewhere",
+    records: [
+      { id: "a", at: 1700000000000, correct: 1 },
+      { id: "", at: 1700000000001 },          // no id
+      { id: "c" },                             // no timestamp
+      { id: "d", at: "nonsense" },
+    ],
+    minutes: { "2023-11-14": 3, "2023-11-15": -5 },
+  });
+  assert.strictEqual(out.records.length, 1, "a malformed row reached the archive");
+  assert.deepStrictEqual(Object.keys(out.minutes), ["2023-11-14"],
+    "a negative day of minutes was accepted");
+});
+
+test("a file that says nothing about itself is refused", () => {
+  assert.strictEqual(readPrepared({ source: "x", records: [] }), null);
+  assert.strictEqual(readPrepared({ schema: "something/else", source: "x", records: [{}] }), null);
+});
+
+const ANKI = "/home/gagafutzi/.local/share/Anki2/Benutzer 1/collection.anki2";
+if (!fs.existsSync(ANKI)) {
+  console.log("(no anki collection — the exporter case is skipped)");
+} else {
+  test("the anki exporter reads a real collection into a prepared file", () => {
+    const out = path.join(require("os").tmpdir(), "anki-test-source.json");
+    execFileSync("python3", [path.join(__dirname, "..", "tools", "anki-export.py"),
+      "--collection", ANKI, "--out", out], { stdio: "pipe" });
+
+    const reading = readFile(fs.readFileSync(out, "utf8"));
+    assert.strictEqual(reading.source, "anki", reading.error || "wrong source");
+    assert.ok(reading.records.length > 0, "no reviews read");
+    assert.ok(reading.records.every(r => r.kind === "review"));
+    /* No difficulty, on purpose: an interval is a schedule, not a measure of
+       how hard the review was, and a made-up one would be the first step
+       towards comparing it with another app's. */
+    assert.ok(reading.records.every(r => r.difficulty === null && r.unit === null),
+      "the anki adapter invented a difficulty");
+    assert.ok(reading.records.every(r => r.seconds <= 60), "a review claimed over a minute");
+
+    // And it folds like any other source, twice over.
+    const archive = A.emptyArchive();
+    A.fold(archive, reading, "anki");
+    const once = archive.records.length;
+    A.fold(archive, reading, "anki again");
+    assert.strictEqual(archive.records.length, once, "re-importing anki grew the archive");
+
+    fs.unlinkSync(out);
   });
 }
 

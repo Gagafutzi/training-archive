@@ -186,10 +186,66 @@ function readRnb(file) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Sources prepared outside the browser                                *
+ * ------------------------------------------------------------------ */
+
+/**
+ * `{ schema: "training-archive-source/1", source, records, minutes }`.
+ *
+ * The extension point for everything not written here. Anki keeps its reviews
+ * in a SQLite database; another site might hand you a CSV, or a page you have
+ * to scrape. None of that belongs in a browser that is meant to still run in
+ * five years without a toolchain — so a small script does the reading and emits
+ * this, and the page takes it as it stands.
+ *
+ * `tools/anki-export.py` is the worked example, in Python's standard library
+ * with no dependencies at all.
+ *
+ * Checked rather than trusted: the file is somebody's script's output and a
+ * malformed row would otherwise land in the archive and stay there.
+ */
+function readPrepared(file) {
+  if (!file || file.schema !== "training-archive-source/1") return null;
+  if (!file.source || !Array.isArray(file.records)) return null;
+
+  var records = [];
+  for (var i = 0; i < file.records.length; i++) {
+    var r = file.records[i];
+    if (!r || !r.id || !(Number(r.at) > 0)) continue;
+    records.push(_makeRecord({
+      source: file.source,
+      id: r.id,
+      at: r.at,
+      kind: r.kind || "item",
+      seconds: r.seconds,
+      correct: r.correct,
+      difficulty: r.difficulty,
+      unit: r.unit,
+      label: r.label,
+      raw: r.raw || null,
+    }));
+  }
+  if (!records.length) return null;
+
+  var minutes = {};
+  var given = file.minutes || {};
+  for (var day in given) {
+    if (!Object.prototype.hasOwnProperty.call(given, day)) continue;
+    var m = Number(given[day]);
+    if (isFinite(m) && m >= 0) minutes[day] = m;
+  }
+
+  return { source: String(file.source), records: records, minutes: minutes };
+}
+
+/* ------------------------------------------------------------------ *
  * Dispatch                                                            *
  * ------------------------------------------------------------------ */
 
 var ADAPTERS = [
+  /* First, because it identifies itself: a prepared file says what it is, so
+     nothing else needs to be asked whether it recognises it. */
+  { name: "prepared", read: readPrepared },
   { name: "syllogimous", read: readSyllogimous },
   { name: "rnb", read: readRnb },
 ];
@@ -219,6 +275,7 @@ if (typeof module !== "undefined") {
     readFile: readFile,
     readSyllogimous: readSyllogimous,
     readRnb: readRnb,
+    readPrepared: readPrepared,
     MAX_ITEM_SECONDS: MAX_ITEM_SECONDS,
   };
 }
