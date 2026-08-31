@@ -132,6 +132,26 @@ def deck_names(con):
     return names
 
 
+def minutes_per_day(records):
+    """Minutes per day, derived from the reviews rather than tallied per file.
+
+    Summing each collection's own minutes and adding them up looks equivalent
+    and is not. A review carries its own millisecond id, so the *same* review
+    found in two collections — which is what a profile migration, a restored
+    backup or a switch from one Anki packaging to another produces — is one
+    record after deduplication and would have been two minutes' worth before it.
+
+    Deriving from the records after they are deduplicated makes that impossible
+    rather than unlikely. It is also the rule the trainers themselves follow for
+    their own summaries: a running tally is a second source of truth, and it
+    drifts.
+    """
+    minutes = {}
+    for r in records:
+        minutes[r["day"]] = minutes.get(r["day"], 0.0) + r["seconds"] / 60.0
+    return minutes
+
+
 def profile_name(path):
     """The profile is the directory the collection sits in."""
     return os.path.basename(os.path.dirname(path))
@@ -160,7 +180,6 @@ def read_reviews(path, label_profile=False):
             pass
 
     records = []
-    minutes = {}
 
     for rid, ease, ivl, last_ivl, factor, time_ms, rtype, did in rows:
         if rtype not in REVIEW_TYPES:
@@ -202,9 +221,7 @@ def read_reviews(path, label_profile=False):
             },
         })
 
-        minutes[day] = minutes.get(day, 0.0) + seconds / 60.0
-
-    return records, minutes
+    return records
 
 
 def main():
@@ -220,35 +237,44 @@ def main():
         raise SystemExit("No Anki collection found. Pass --collection.")
 
     label_profile = len(paths) > 1
-    records = []
-    minutes = {}
+    by_id = {}
     empty = []
+    shared = 0
 
     for path in paths:
         print("Reading %s" % path)
-        got, mins = read_reviews(path, label_profile)
+        got = read_reviews(path, label_profile)
         if not got:
             empty.append(path)
             continue
 
-        records.extend(got)
-        # Summed across profiles, not maxed: two profiles studied on one day are
-        # two separate stretches of study. (Merging two *files* still takes the
-        # larger, since those are two readings of the same thing.)
-        for day, m in mins.items():
-            minutes[day] = minutes.get(day, 0.0) + m
+        # Keyed on the review's own id, so a collection that was migrated,
+        # restored from a backup or copied between Anki packagings contributes
+        # its reviews once rather than once per copy.
+        fresh = 0
+        for r in got:
+            if r["id"] in by_id:
+                shared += 1
+            else:
+                fresh += 1
+            by_id[r["id"]] = r
 
-        days = sorted(mins)
-        print("   %-24s %5d reviews, %s to %s, %.0f min"
-              % (profile_name(path), len(got), days[0], days[-1], sum(mins.values())))
+        days = sorted({r["day"] for r in got})
+        print("   %-24s %5d reviews (%d new), %s to %s"
+              % (profile_name(path), len(got), fresh, days[0], days[-1]))
 
     for path in empty:
         print("   %-24s no reviews" % profile_name(path))
 
-    if not records:
+    if not by_id:
         raise SystemExit("No reviews in any collection found.")
 
-    records.sort(key=lambda r: r["at"])
+    if shared:
+        print("   %d review(s) appeared in more than one collection and were counted once."
+              % shared)
+
+    records = sorted(by_id.values(), key=lambda r: r["at"])
+    minutes = minutes_per_day(records)
 
     payload = {
         "schema": "training-archive-source/1",

@@ -80,6 +80,13 @@ failure you notice; it reports a real collection with real reviews, just not
 yours. It also reads every *profile*, since a profile per subject is a normal way
 to use Anki and your studying is the sum of them.
 
+Reviews are deduplicated on their own ids across every collection read, and the
+daily minutes are **derived from the deduplicated reviews** rather than summed
+per collection. Those look equivalent and are not: a profile migration, a
+restored backup or a move between Anki packagings puts the same reviews in two
+collections, and summing per collection would have counted those days twice
+while the review count stayed right.
+
 It reads **only the review log** — when each review happened, how long it took,
 and whether the card came back — plus deck names. It never opens `notes`, so no
 card content, question, answer or media reaches the archive. That matters because

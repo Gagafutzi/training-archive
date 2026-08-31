@@ -245,6 +245,35 @@ if (!fs.existsSync(ANKI)) {
 
     fs.unlinkSync(out);
   });
+
+  test("a collection found twice contributes its reviews once", () => {
+    /*
+     * What a profile migration, a restored backup, or a move between Anki
+     * packagings produces: the same reviews in two collections, carrying the
+     * same ids. The records deduplicate on those ids — but minutes used to be
+     * summed per collection, which would have counted the shared days twice
+     * while the record count stayed right. Deriving the minutes from the
+     * deduplicated reviews is what makes the two agree by construction.
+     */
+    const out = path.join(require("os").tmpdir(), "anki-double-source.json");
+    const script = path.join(__dirname, "..", "tools", "anki-export.py");
+
+    execFileSync("python3", [script, "--collection", ANKI, "--out", out], { stdio: "pipe" });
+    const once = readFile(fs.readFileSync(out, "utf8"));
+
+    execFileSync("python3", [script, "--collection", ANKI, "--collection", ANKI,
+      "--out", out], { stdio: "pipe" });
+    const twice = readFile(fs.readFileSync(out, "utf8"));
+
+    assert.strictEqual(twice.records.length, once.records.length,
+      "the same collection read twice doubled the reviews");
+
+    const sum = (m) => Object.keys(m).reduce((a, d) => a + m[d], 0);
+    assert.ok(Math.abs(sum(twice.minutes) - sum(once.minutes)) < 0.001,
+      `minutes doubled: ${sum(once.minutes)} became ${sum(twice.minutes)}`);
+
+    fs.unlinkSync(out);
+  });
 }
 
 /* ------------------------------------------------------------------ */
