@@ -38,6 +38,7 @@ it still runs in five years would be the worse trade.
 """
 
 import argparse
+import datetime
 import glob
 import json
 import os
@@ -45,6 +46,10 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+
+# Five minutes, the point past which an item was not being worked on — the same
+# line every other source in this project draws.
+MAX_ITEM_SECONDS = 300
 
 # ---------------------------------------------------------------- snappy
 
@@ -193,6 +198,75 @@ def syllogimous_from(store):
     return out if out.get("SYL_HISTORY") else None
 
 
+def syllogimous_v3_from(store):
+    """Syllogimous **v3**, which is a different app under a different key.
+
+    A separate source rather than more of `syllogimous`, for the reason units
+    are kept apart everywhere else: v3's modes are its own — `space-time`,
+    `anchor-space`, `Analogy: Vertical` — and its premise counts sit on their own
+    scale. Folding them together would put two vocabularies in one column and
+    invite a comparison that means nothing.
+
+    **The duration is derived, not recorded.** v3 stores when a question
+    *started* and nothing about when it ended: `timeOffset` is null or zero on
+    every one of them, and `tlen` is the limit rather than the time taken. So an
+    item's length is taken as the gap to the next question, clamped at five
+    minutes like everywhere else — which is a real measure of time on task and
+    is honestly a better one than a self-reported duration, right up until
+    somebody walks away mid-session, which is what the clamp is for.
+    """
+    raw = store.get("sllgms-v3-app-state")
+    if not raw:
+        return None
+    try:
+        questions = json.loads(raw).get("questions") or []
+    except ValueError:
+        return None
+
+    questions = sorted((q for q in questions if q.get("startedAt")),
+                       key=lambda q: q["startedAt"])
+    if not questions:
+        return None
+
+    gaps = []
+    for i in range(len(questions) - 1):
+        gap = (questions[i + 1]["startedAt"] - questions[i]["startedAt"]) / 1000.0
+        gaps.append(gap if 0 < gap <= MAX_ITEM_SECONDS else None)
+    known = sorted(g for g in gaps if g is not None)
+    typical = known[len(known) // 2] if known else 30.0
+    gaps.append(None)                       # the last question has no successor
+
+    records = []
+    for q, gap in zip(questions, gaps):
+        started = q["startedAt"]
+        records.append({
+            "source": "syllogimous-v3",
+            "id": str(started),
+            "at": started,
+            "day": datetime.datetime.utcfromtimestamp(started / 1000.0).strftime("%Y-%m-%d"),
+            "kind": "item",
+            "seconds": gap if gap is not None else typical,
+            # "missed" is the clock running out, which is not a right answer.
+            "correct": 1 if q.get("correctness") == "right" else 0,
+            "difficulty": q.get("plen"),
+            "unit": "syllogimous-v3-premises",
+            "label": q.get("category") or q.get("type") or "unknown",
+            "raw": {
+                "type": q.get("type"),
+                "modifiers": q.get("modifiers"),
+                "tags": q.get("tags"),
+                "timeLimit": q.get("tlen"),
+                "correctness": q.get("correctness"),
+            },
+        })
+
+    minutes = {}
+    for r in records:
+        minutes[r["day"]] = minutes.get(r["day"], 0.0) + r["seconds"] / 60.0
+
+    return {"records": records, "minutes": minutes}
+
+
 def rnb_from(store):
     """One payload per profile: RNB keeps a whole record under each."""
     out = []
@@ -263,6 +337,23 @@ def main():
                     json.dump(syl, fh)
                 items = len(json.loads(syl["SYL_HISTORY"]))
                 print("  syllogimous  %-52s %5d items" % (label, items))
+                written.append(path)
+
+            v3 = syllogimous_v3_from(store)
+            if v3:
+                # Which deployment, the same as the other readers record it:
+                # v3 is mirrored under several domains and they are one app.
+                for r in v3["records"]:
+                    r["raw"]["origin"] = label
+                path = os.path.join(args.outdir, "syllogimous-v3-%s.json" % safe)
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump({
+                        "schema": "training-archive-source/1",
+                        "source": "syllogimous-v3",
+                        "records": v3["records"],
+                        "minutes": v3["minutes"],
+                    }, fh)
+                print("  syllogimous-v3 %-50s %5d items" % (label, len(v3["records"])))
                 written.append(path)
 
             for name, data in rnb_from(store):

@@ -154,6 +154,17 @@ better trade than a dependency in a project whose one promise is that it still
 runs in five years. Chromium keeps its localStorage in LevelDB instead, which is
 not implemented.
 
+Syllogimous **v3** is read too, from `sllgms-v3-app-state`. It is kept as its own
+source rather than folded in with v4, for the reason units are kept apart
+everywhere: its modes are its own — `space-time`, `anchor-space`,
+`Analogy: Vertical` — and its premise counts sit on their own scale.
+
+Its item durations are **derived, not recorded**: v3 stores when a question
+started and nothing about when it ended, so an item's length is the gap to the
+next question, clamped at five minutes. That is a real measure of time on task,
+and honestly a better one than a self-reported duration — right up until somebody
+walks away mid-session, which is what the clamp is for.
+
 Records carry the **origin** they came from in `raw.origin`. The original v4, a
 fork, a dev server and your deployed copy all write the same keys and are not the
 same app; they stay one source so the day counting is not fragmented, and the

@@ -209,8 +209,9 @@ function main() {
   for (let i = 0; i < names.length; i++) {
     for (let j = i + 1; j < names.length; j++) {
       const pair = A.overlap(archive, names[i], names[j]);
-      say("   " + (names[i] + " x " + names[j]).padEnd(28)
-        + pair.days.length + " days, " + pair.weeks.length + " week(s) trained in both");
+      say("   " + (names[i] + " x " + names[j]).padEnd(32) + " "
+        + String(pair.days.length).padStart(3) + " days, "
+        + String(pair.weeks.length).padStart(2) + " week(s) trained in both");
     }
   }
 
