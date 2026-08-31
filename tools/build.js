@@ -39,7 +39,17 @@ const HOME = os.homedir();
    type the same four paths every week. */
 const SOURCES = {
   archive: path.join(HOME, "training-archive.json"),
-  downloads: path.join(HOME, "Downloads"),
+  /* Downloads is where an export lands, and the folders where one gets moved
+     when it is being kept on purpose. The oldest records on this machine were
+     in Dokumente, four months out of reach of a scan that only looked in
+     Downloads — which is the ordinary fate of a file somebody filed. */
+  folders: [
+    path.join(HOME, "Downloads"),
+    path.join(HOME, "Dokumente"),
+    path.join(HOME, "Documents"),
+    path.join(HOME, "Schreibtisch"),
+    path.join(HOME, "Desktop"),
+  ],
   patterns: [
     /^syllogimous-export.*\.json$/,
     /^rnb-.*\.json$/,
@@ -54,17 +64,21 @@ function say(line) { process.stdout.write(line + "\n"); }
  * Gathering                                                           *
  * ------------------------------------------------------------------ */
 
-function exportsInDownloads() {
-  let names;
-  try { names = fs.readdirSync(SOURCES.downloads); } catch (e) { return []; }
+function exportsOnDisk() {
+  const found = [];
 
-  return names
-    .filter(n => SOURCES.patterns.some(p => p.test(n)))
-    .map(n => path.join(SOURCES.downloads, n))
-    /* Oldest first, so where two exports disagree about one record the newer
-       reading is the one left standing — the merge replaces on a repeated id,
-       and a later export saw the same event with more history behind it. */
-    .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+  for (const folder of SOURCES.folders) {
+    let names;
+    try { names = fs.readdirSync(folder); } catch (e) { continue; }
+    for (const name of names) {
+      if (SOURCES.patterns.some(p => p.test(name))) found.push(path.join(folder, name));
+    }
+  }
+
+  /* Oldest first, so where two exports disagree about one record the newer
+     reading is the one left standing — the merge replaces on a repeated id, and
+     a later export saw the same event with more history behind it. */
+  return found.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
 }
 
 function ankiSource() {
@@ -140,9 +154,9 @@ function main() {
   say("\nLive browser storage");
   const live = liveStorage();
 
-  say("\nExports in " + SOURCES.downloads);
-  const files = exportsInDownloads();
-  if (!files.length) say("   (none found)");
+  say("\nExports on disk");
+  const files = exportsOnDisk();
+  if (!files.length) say("   (none found in " + SOURCES.folders.length + " folders)");
 
   /* Exports first, live storage last: where the two disagree about one record
      the live one is current, and the merge keeps whichever arrives later. */
@@ -161,8 +175,10 @@ function main() {
     }
 
     const out = A.fold(archive, reading, path.basename(file));
-    say("   " + path.basename(file).padEnd(38) + " " + reading.source.padEnd(12)
-      + " +" + out.added + " new, " + out.updated + " updated");
+    if (out.added || out.updated) {
+      say("   " + path.basename(file).padEnd(40) + " " + reading.source.padEnd(12)
+        + " +" + out.added + " new, " + out.updated + " updated");
+    }
   }
 
   if (!archive.records.length) {

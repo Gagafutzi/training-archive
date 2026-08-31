@@ -19,7 +19,12 @@ exports in, take the archive out, keep it somewhere that is not a browser.
 node tools/build.js                     # gather everything on this machine
 ```
 
-then open `index.html` and drop `~/training-archive.json` on it. The page caches
+then open `index.html` and drop `~/training-archive.json` on it.
+
+It looks in Downloads, Dokumente, Documents, Schreibtisch and Desktop — an export
+lands in the first and gets moved to one of the others precisely when it is being
+kept on purpose, which is how this machine's oldest records sat four months out of
+reach of a scan that only knew about Downloads. The page caches
 what it reads, so it is there next time without dropping it again — until you
 clear site data, which is the day the file earns its keep.
 
