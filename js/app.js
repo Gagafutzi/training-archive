@@ -96,10 +96,180 @@ function importNeighbours() {
  * ------------------------------------------------------------------ */
 
 function render() {
+  renderStreaks();
+  renderHeatmap();
   renderSources();
+  renderCharts();
+  renderModes();
   renderOverlap();
+  renderFilters();
   renderDays();
   $("save").disabled = archive.records.length === 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * The year                                                            *
+ * ------------------------------------------------------------------ */
+
+function renderStreaks() {
+  var s = streaks(archive);
+  var host = $("streaks");
+  if (!archive.records.length) { host.innerHTML = ""; return; }
+
+  host.innerHTML =
+    "<span><b>" + s.current + "</b> day streak</span>"
+    + "<span><b>" + s.longest + "</b> longest</span>"
+    + (s.uncertain
+        ? "<span class='dim'>" + s.uncertain + " unevidenced day(s) inside it</span>"
+        : "");
+}
+
+/**
+ * A square per day for the last year.
+ *
+ * Built as a grid of columns, one per week, so it reads the way every calendar
+ * heatmap does. The title on each square carries the numbers, because a colour
+ * can say "a lot" and never "forty-three minutes".
+ */
+function renderHeatmap() {
+  var host = $("heatmap");
+  if (!archive.records.length) { host.innerHTML = ""; return; }
+
+  var cal = calendar(archive, null, 53);
+  // Start the grid on a Monday so the rows are weekdays throughout.
+  var lead = (new Date(cal[0].day + "T00:00:00Z").getUTCDay() + 6) % 7;
+
+  var peak = 1;
+  cal.forEach(function (d) { if (d.minutes > peak) peak = d.minutes; });
+
+  var html = "";
+  for (var i = 0; i < lead; i++) html += "<i class='cell pad'></i>";
+
+  cal.forEach(function (d) {
+    var level = d.state === "trained"
+      ? 1 + Math.min(3, Math.floor(4 * d.minutes / peak))
+      : 0;
+    var parts = [];
+    for (var src in d.bySource) if (d.bySource[src] >= 1) {
+      parts.push(src + " " + fmt(d.bySource[src]) + "m");
+    }
+    html += "<i class='cell s-" + d.state + " L" + level + "' title='"
+      + d.day + " — "
+      + (d.state === "unknown" ? "no evidence either way"
+         : parts.length ? parts.join(", ") : "rest day")
+      + "'></i>";
+  });
+
+  host.innerHTML = html;
+}
+
+/* ------------------------------------------------------------------ *
+ * Over time                                                           *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Minutes as bars and accuracy as a line, per source, drawn as inline SVG.
+ *
+ * No library, for the same reason the rest of this project has none: a chart
+ * that needs a CDN is a chart that stops working the year the CDN moves, and
+ * the archive is meant to still open in five years.
+ */
+function renderCharts() {
+  var host = $("charts");
+  var names = Object.keys(archive.minutes).sort();
+  host.innerHTML = "";
+
+  names.forEach(function (name) {
+    var pts = series(archive, name).slice(-180);
+    if (!pts.length) return;
+
+    var W = 720, H = 120, pad = 4;
+    var peak = 1;
+    pts.forEach(function (p) { if (p.minutes > peak) peak = p.minutes; });
+    var step = (W - pad * 2) / Math.max(1, pts.length);
+
+    var bars = "", line = "", started = false;
+    pts.forEach(function (p, i) {
+      var x = pad + i * step;
+      var h = (H - pad * 2) * (p.minutes / peak);
+      bars += "<rect x='" + fmt(x, 1) + "' y='" + fmt(H - pad - h, 1)
+        + "' width='" + fmt(Math.max(1, step - 1), 1) + "' height='" + fmt(h, 1)
+        + "'><title>" + p.day + " — " + fmt(p.minutes) + "m, " + p.n + " items</title></rect>";
+
+      if (p.accuracy != null) {
+        var y = pad + (H - pad * 2) * (1 - p.accuracy);
+        line += (started ? " L" : "M") + fmt(x + step / 2, 1) + " " + fmt(y, 1);
+        started = true;
+      }
+    });
+
+    var div = document.createElement("div");
+    div.className = "chart";
+    div.innerHTML = "<h3>" + name + " <small class='dim'>"
+      + pts.length + " days, peak " + fmt(peak) + "m</small></h3>"
+      + "<svg viewBox='0 0 " + W + " " + H + "' preserveAspectRatio='none'>"
+      + "<g class='bars'>" + bars + "</g>"
+      + "<path class='acc' d='" + line + "'></path>"
+      + "</svg>";
+    host.appendChild(div);
+  });
+}
+
+/** Volume and accuracy per mode, which is the one view the trainers cannot give. */
+function renderModes() {
+  var host = $("modes");
+  var names = Object.keys(archive.minutes).sort();
+  host.innerHTML = "";
+
+  names.forEach(function (name) {
+    var rows = byLabel(archive, name).slice(0, 12);
+    if (!rows.length) return;
+
+    var body = rows.map(function (r) {
+      return "<tr><td>" + r.label + "</td><td>" + r.n + "</td><td>"
+        + (r.accuracy == null ? "—" : fmt(100 * r.accuracy) + "%")
+        + "</td><td>" + fmt(r.minutes) + "m</td></tr>";
+    }).join("");
+
+    var div = document.createElement("div");
+    div.innerHTML = "<h3>" + name + "</h3><table>"
+      + "<tr><th>label</th><th>items</th><th>right</th><th>time</th></tr>"
+      + body + "</table>";
+    host.appendChild(div);
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Filtering, and taking the records elsewhere                         *
+ * ------------------------------------------------------------------ */
+
+var filterSource = "";
+var filterFrom = "";
+
+function renderFilters() {
+  var sel = $("filterSource");
+  if (!sel) return;
+  var names = Object.keys(archive.minutes).sort();
+  var want = filterSource;
+  sel.innerHTML = "<option value=''>every source</option>"
+    + names.map(function (n) {
+        return "<option value='" + n + "'" + (n === want ? " selected" : "") + ">" + n + "</option>";
+      }).join("");
+}
+
+function downloadCsv() {
+  var rows = archive.records.filter(function (r) {
+    return (!filterSource || r.source === filterSource)
+      && (!filterFrom || r.day >= filterFrom);
+  });
+  var url = URL.createObjectURL(new Blob(
+    [toCsv({ records: rows })], { type: "text/csv" }));
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "training-records.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+  note(rows.length + " record(s) written to CSV.");
 }
 
 function renderSources() {
@@ -168,9 +338,12 @@ function renderOverlap() {
 }
 
 function renderDays() {
-  var all = days(archive).slice(-60).reverse();
+  var all = days(archive)
+    .filter(function (d) { return !filterFrom || d >= filterFrom; })
+    .slice(-60).reverse();
   var host = $("days");
-  var names = Object.keys(archive.minutes).sort();
+  var names = Object.keys(archive.minutes).sort()
+    .filter(function (n) { return !filterSource || n === filterSource; });
 
   if (!all.length) { host.innerHTML = ""; return; }
 
@@ -234,6 +407,13 @@ window.addEventListener("DOMContentLoaded", function () {
   $("file").addEventListener("change", function (e) { takeFiles(e.target.files); e.target.value = ""; });
   $("save").addEventListener("click", saveArchive);
   $("neighbours").addEventListener("click", importNeighbours);
+  $("csv").addEventListener("click", downloadCsv);
+  $("filterSource").addEventListener("change", function (e) {
+    filterSource = e.target.value; render();
+  });
+  $("filterFrom").addEventListener("change", function (e) {
+    filterFrom = e.target.value; render();
+  });
 
   var drop = $("drop");
   ["dragenter", "dragover"].forEach(function (type) {

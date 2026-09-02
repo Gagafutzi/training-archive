@@ -28,8 +28,36 @@
 </section>
 
 <section>
+  <h2>The year</h2>
+  <p class="dim">
+    One square per day. A <b>filled</b> square is a day with training; an
+    <b>empty</b> one is a rest day inside a stretch some export vouched for; a
+    <b>hatched</b> one is a day nobody has evidence about — usually because site
+    data was cleared before a backup was taken. Drawing the last two alike would
+    claim you rested through exactly the weeks the record was lost.
+  </p>
+  <div id="streaks" class="streaks"></div>
+  <div id="heatmap" class="heatmap"></div>
+</section>
+
+<section>
   <h2>Sources</h2>
   <div id="sources" class="cards"></div>
+</section>
+
+<section>
+  <h2>Over time</h2>
+  <p class="dim">
+    Minutes as bars, accuracy as the line. A day is given an accuracy only once
+    it has ten answers &mdash; below that a percentage is a coin toss wearing a
+    decimal point.
+  </p>
+  <div id="charts"></div>
+</section>
+
+<section>
+  <h2>By mode</h2>
+  <div id="modes" class="cards"></div>
 </section>
 
 <section>
@@ -45,6 +73,11 @@
 
 <section>
   <h2>Days</h2>
+  <div class="row">
+    <label>Source <select id="filterSource"></select></label>
+    <label>From <input id="filterFrom" type="date"></label>
+    <button id="csv" class="btn" type="button">Download CSV</button>
+  </div>
   <table id="days"></table>
 </section>
 
@@ -56,6 +89,7 @@
 <script src="js/record.js"></script>
 <script src="js/adapters.js"></script>
 <script src="js/archive.js"></script>
+<script src="js/insight.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

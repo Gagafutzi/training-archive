@@ -308,7 +308,15 @@ test("the page renders an archive without throwing", () => {
     classList: { add() {}, remove() {} },
   });
   const nodes = {};
-  for (const id of ["log", "save", "sources", "overlap", "days", "file", "neighbours", "drop"]) {
+  /*
+   * Every id the page defines, so this test renders the real page rather than
+   * the half of it that existed when the stub was written. A missing id used to
+   * surface as "Cannot read properties of null", which reads like a bug in the
+   * app and is a bug in the fixture.
+   */
+  for (const id of ["log", "save", "sources", "overlap", "days", "file",
+                    "neighbours", "drop", "streaks", "heatmap", "charts",
+                    "modes", "csv", "filterSource", "filterFrom"]) {
     nodes[id] = el();
   }
 
@@ -334,7 +342,7 @@ test("the page renders an archive without throwing", () => {
     // The page loads these as script tags, where `require` does not exist.
     .replace(/typeof require === "function"/g, "false");
 
-  for (const f of ["js/record.js", "js/adapters.js", "js/archive.js", "js/app.js"]) {
+  for (const f of ["js/record.js", "js/adapters.js", "js/archive.js", "js/insight.js", "js/app.js"]) {
     vm.runInContext(strip(f), ctx, { filename: f });
   }
 
@@ -366,6 +374,81 @@ test("the page renders an archive without throwing", () => {
 });
 
 /* ------------------------------------------------------------------ */
+
+
+/* ------------------------------------------------------------------ *
+ * What the record shows                                               *
+ * ------------------------------------------------------------------ */
+
+const I = require("../js/insight.js");
+
+/**
+ * The three states are the whole reason this module exists, so they are the
+ * first thing checked. A tracker that owns its trainers has two states and can
+ * afford to; this one ingests exports from apps it does not own, so an empty
+ * day is either a rest day or a hole in the record, and drawing them alike
+ * would claim rest through exactly the stretches that were lost.
+ */
+test("a day is trained, rested, or unevidenced — and they are told apart", () => {
+  const a = A.emptyArchive();
+  a.minutes.syl = { "2026-03-02": 40 };
+  a.coverage.syl = [["2026-03-01", "2026-03-03"]];
+
+  const cal = I.calendar(a, "2026-03-04", 1);
+  const by = {};
+  for (const d of cal) by[d.day] = d.state;
+
+  assert.strictEqual(by["2026-03-02"], "trained", "a day with minutes was not called trained");
+  assert.strictEqual(by["2026-03-01"], "rested", "an empty day inside a covered span was not a rest day");
+  assert.strictEqual(by["2026-03-04"], "unknown", "a day outside every span was claimed as rest");
+});
+
+/**
+ * An unevidenced day neither breaks a streak nor extends it. Counting it as a
+ * miss punishes a cleared cache; counting it as a hit invents training.
+ */
+test("a hole in the record does not break a streak, and does not fill one", () => {
+  const a = A.emptyArchive();
+  a.minutes.syl = { "2026-03-01": 30, "2026-03-04": 30 };
+  a.coverage.syl = [["2026-03-01", "2026-03-01"], ["2026-03-04", "2026-03-04"]];
+
+  // 03-02 and 03-03 are outside every span: unknown, and skipped.
+  const s = I.streaks(a, "2026-03-04");
+  assert.strictEqual(s.current, 2, "the streak was broken by days nobody has evidence about");
+  assert.strictEqual(s.uncertain, 2,
+    "the two unevidenced days inside the streak were not reported as such");
+
+  a.coverage.syl = [["2026-03-01", "2026-03-04"]];
+  assert.strictEqual(I.streaks(a, "2026-03-04").current, 1,
+    "a known rest day failed to break the streak");
+});
+
+/** A percentage from three answers is a coin toss wearing a decimal point. */
+test("a day is given an accuracy only once it has enough answers", () => {
+  const a = A.emptyArchive();
+  a.records = [];
+  for (let i = 0; i < 3; i++) {
+    a.records.push({ source: "syl", id: "a" + i, day: "2026-03-01", correct: 1, seconds: 10 });
+  }
+  for (let i = 0; i < 12; i++) {
+    a.records.push({ source: "syl", id: "b" + i, day: "2026-03-02", correct: i % 2, seconds: 10 });
+  }
+
+  const s = I.series(a, "syl");
+  assert.strictEqual(s[0].accuracy, null, "three answers were reported as an accuracy");
+  assert.strictEqual(s[1].accuracy, 0.5, "twelve answers were not");
+  assert.strictEqual(s[1].n, 12, "the item count is wrong");
+});
+
+test("the CSV carries one row per record, with its own commas escaped", () => {
+  const a = A.emptyArchive();
+  a.records = [{ source: "syl", id: "1", day: "2026-03-01", kind: "item",
+                 seconds: 12, correct: 1, label: "Comparison, Numerical" }];
+  const csv = I.toCsv(a);
+  const lines = csv.split("\n");
+  assert.strictEqual(lines.length, 2, "a one-record archive did not make a header and one row");
+  assert.ok(lines[1].includes('"Comparison, Numerical"'), "a comma in a label was not quoted");
+});
 
 for (const [name, fn] of cases) {
   try {

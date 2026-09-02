@@ -89,3 +89,59 @@ td:last-child { color: var(--ok); font-size: .8rem; }
 .log { list-style: none; padding: 0; margin: 0; font-size: .88rem; color: var(--dim); }
 .log li { padding: .3rem 0; border-block-end: 1px solid var(--line); }
 .log li.bad { color: var(--bad); }
+
+/* ------------------------------------------------------------------ *
+ * The year                                                            *
+ * ------------------------------------------------------------------ */
+
+.streaks { display: flex; gap: 18px; margin: 0 0 10px; align-items: baseline; }
+.streaks b { font-size: 1.3rem; }
+
+/*
+ * Columns of seven, filled top to bottom, so each column is one week — the
+ * layout every calendar heatmap uses, and the reason `renderHeatmap` pads the
+ * first partial week rather than starting on whatever weekday the year began.
+ */
+.heatmap {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  grid-auto-flow: column;
+  grid-auto-columns: 12px;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.heatmap .cell { width: 12px; height: 12px; border-radius: 2px; display: block; }
+.heatmap .pad { visibility: hidden; }
+
+/* A rest day: known, and empty. */
+.heatmap .s-rested { background: rgba(127, 127, 127, 0.16); }
+
+/*
+ * A day nobody has evidence about. Hatched rather than shaded, because any
+ * shade reads as an amount — and the whole point is that there is no amount,
+ * only an absence of record.
+ */
+.heatmap .s-unknown {
+  background: repeating-linear-gradient(
+    45deg, rgba(127, 127, 127, 0.30) 0 2px, transparent 2px 4px);
+}
+
+.heatmap .L1 { background: #1f6f43; }
+.heatmap .L2 { background: #2f9c5c; }
+.heatmap .L3 { background: #46c476; }
+.heatmap .L4 { background: #6be294; }
+
+/* ------------------------------------------------------------------ *
+ * Over time                                                           *
+ * ------------------------------------------------------------------ */
+
+.chart { margin: 0 0 18px; }
+.chart h3 { margin: 0 0 4px; font-size: 0.95rem; }
+.chart svg { width: 100%; height: 120px; display: block; }
+.chart .bars rect { fill: rgba(127, 127, 127, 0.45); }
+.chart .acc { fill: none; stroke: #46c476; stroke-width: 2; vector-effect: non-scaling-stroke; }
+
+#modes table { width: 100%; margin-bottom: 14px; }
+#modes h3 { margin: 0 0 4px; font-size: 0.95rem; }
