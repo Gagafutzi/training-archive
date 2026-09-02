@@ -2,3 +2,7 @@
 training-archive*.json
 anki-source*.json
 *.anki2
+
+# Python leaves these behind; a compiled copy of a script is not source.
+__pycache__/
+*.pyc

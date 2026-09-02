@@ -184,7 +184,7 @@ def read_origin(path):
 
 
 def origin_label(path):
-    """`https+++gagafutzi.github.io` reads better as what it is."""
+    """`https+++example.github.io` reads better as what it is."""
     name = os.path.basename(path)
     return name.replace("+++", "://").replace("++++", "://").replace("+", "/")
 

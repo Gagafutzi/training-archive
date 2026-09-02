@@ -97,7 +97,9 @@ test("weeks are counted the way weeks are counted", () => {
  * The adapters, against real exports                                  *
  * ------------------------------------------------------------------ */
 
-const DOWNLOADS = "/home/gagafutzi/Downloads";
+// The machine's own home, not the one this was written on: a hardcoded path
+// makes a suite that passes for one person and errors for everybody else.
+const DOWNLOADS = require("path").join(require("os").homedir(), "Downloads");
 const find = (pattern) => {
   try {
     return fs.readdirSync(DOWNLOADS).filter(f => pattern.test(f))
@@ -216,7 +218,8 @@ test("a file that says nothing about itself is refused", () => {
   assert.strictEqual(readPrepared({ schema: "something/else", source: "x", records: [{}] }), null);
 });
 
-const ANKI = "/home/gagafutzi/.local/share/Anki2/Benutzer 1/collection.anki2";
+const ANKI = require("path").join(require("os").homedir(),
+  ".local/share/Anki2/Benutzer 1/collection.anki2");
 if (!fs.existsSync(ANKI)) {
   console.log("(no anki collection — the exporter case is skipped)");
 } else {
