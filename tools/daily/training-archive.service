@@ -1,0 +1,11 @@
+[Unit]
+Description=Fold today's training into the archive
+Documentation=file://%h/training-archive/README.md
+
+[Service]
+Type=oneshot
+# Absolute paths: a user timer runs with almost no environment.
+ExecStart=/usr/bin/node %h/training-archive/tools/build.js
+# The archive lives outside the repo and is the thing being protected, so a run
+# that cannot write it should fail loudly rather than look like it worked.
+WorkingDirectory=%h/training-archive

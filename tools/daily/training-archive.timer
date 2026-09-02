@@ -1,0 +1,16 @@
+[Unit]
+Description=Fold the training record daily
+
+[Timer]
+# Evening rather than midnight: a snapshot taken before the day's training is a
+# snapshot of yesterday, and the whole point is to not be a day behind when
+# somebody clears site data.
+OnCalendar=*-*-* 23:30:00
+# A machine that was off at 23:30 still gets its snapshot on the next boot,
+# which is the case this exists for — the day you were too tired to sit down is
+# also the day nobody made an export.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
