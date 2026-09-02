@@ -147,10 +147,13 @@ function series(archive, source, minItems) {
   for (var i = 0; i < archive.records.length; i++) {
     var r = archive.records[i];
     if (r.source !== source) continue;
-    var d = (byDay[r.day] ??= { day: r.day, n: 0, right: 0, seconds: 0 });
+    var d = (byDay[r.day] ??= {
+      day: r.day, n: 0, right: 0, seconds: 0, difficulty: 0, graded: 0, unit: null,
+    });
     d.n++;
     if (r.correct) d.right++;
     d.seconds += r.seconds || 0;
+    if (r.difficulty != null) { d.difficulty += r.difficulty; d.graded++; d.unit = r.unit; }
   }
 
   return Object.keys(byDay).sort().map(function (day) {
@@ -159,6 +162,16 @@ function series(archive, source, minItems) {
       day: day,
       n: d.n,
       minutes: d.seconds / 60,
+      /*
+       * The progress line, and the reason it is not accuracy.
+       *
+       * An adaptive trainer *holds accuracy constant*: it aims at a target and
+       * moves the difficulty until it gets there. A flat accuracy line means the
+       * controller is working and says nothing about whether you improved. What
+       * improved is whatever had to rise to keep it flat.
+       */
+      difficulty: d.graded ? d.difficulty / d.graded : null,
+      unit: d.unit,
       accuracy: d.n >= floor ? d.right / d.n : null,
     };
   });

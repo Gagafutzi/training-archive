@@ -168,7 +168,13 @@ function renderHeatmap() {
  * ------------------------------------------------------------------ */
 
 /**
- * Minutes as bars and accuracy as a line, per source, drawn as inline SVG.
+ * Minutes as bars and *difficulty* as the line, per source, drawn as inline SVG.
+ *
+ * Not accuracy. An adaptive trainer holds accuracy at a target and moves the
+ * difficulty until it gets there, so an accuracy line is a picture of the
+ * controller doing its job — flat whether you improved or not. `tools/chart.js`
+ * has said so since it was written; the first version of this page drew the
+ * other line anyway.
  *
  * No library, for the same reason the rest of this project has none: a chart
  * that needs a CDN is a chart that stops working the year the CDN moves, and
@@ -184,29 +190,48 @@ function renderCharts() {
     if (!pts.length) return;
 
     var W = 720, H = 120, pad = 4;
-    var peak = 1;
-    pts.forEach(function (p) { if (p.minutes > peak) peak = p.minutes; });
+    var peak = 1, dHi = null, dLo = null, unit = null;
+    pts.forEach(function (p) {
+      if (p.minutes > peak) peak = p.minutes;
+      if (p.difficulty == null) return;
+      if (dHi === null || p.difficulty > dHi) dHi = p.difficulty;
+      if (dLo === null || p.difficulty < dLo) dLo = p.difficulty;
+      unit = p.unit || unit;
+    });
     var step = (W - pad * 2) / Math.max(1, pts.length);
+    var range = (dHi != null && dHi > dLo) ? dHi - dLo : 1;
 
-    var bars = "", line = "", started = false;
+    var bars = "", line = "", open = false;
     pts.forEach(function (p, i) {
       var x = pad + i * step;
       var h = (H - pad * 2) * (p.minutes / peak);
       bars += "<rect x='" + fmt(x, 1) + "' y='" + fmt(H - pad - h, 1)
         + "' width='" + fmt(Math.max(1, step - 1), 1) + "' height='" + fmt(h, 1)
-        + "'><title>" + p.day + " — " + fmt(p.minutes) + "m, " + p.n + " items</title></rect>";
+        + "'><title>" + p.day + " — " + fmt(p.minutes) + "m, " + p.n + " items"
+        + (p.difficulty == null ? "" : ", " + fmt(p.difficulty, 1) + " " + (unit || "difficulty"))
+        + (p.accuracy == null ? "" : ", " + fmt(100 * p.accuracy) + "% right")
+        + "</title></rect>";
 
-      if (p.accuracy != null) {
-        var y = pad + (H - pad * 2) * (1 - p.accuracy);
-        line += (started ? " L" : "M") + fmt(x + step / 2, 1) + " " + fmt(y, 1);
-        started = true;
-      }
+      /*
+       * The line breaks where the day has no difficulty rather than jumping the
+       * gap. A straight segment across a fortnight nobody played reads as a
+       * trend through it, which is the one thing the picture must not say.
+       */
+      if (p.difficulty == null) { open = false; return; }
+      var y = pad + (H - pad * 2) * (1 - (p.difficulty - dLo) / range);
+      line += (open ? " L" : " M") + fmt(x + step / 2, 1) + " " + fmt(y, 1);
+      open = true;
     });
 
     var div = document.createElement("div");
     div.className = "chart";
     div.innerHTML = "<h3>" + name + " <small class='dim'>"
-      + pts.length + " days, peak " + fmt(peak) + "m</small></h3>"
+      + pts.length + " days · bars are minutes, peak " + fmt(peak) + "m"
+      + (dHi == null
+          ? " · no difficulty recorded"
+          : " · line is " + (unit || "difficulty") + ", "
+            + fmt(dLo, 1) + "&ndash;" + fmt(dHi, 1))
+      + "</small></h3>"
       + "<svg viewBox='0 0 " + W + " " + H + "' preserveAspectRatio='none'>"
       + "<g class='bars'>" + bars + "</g>"
       + "<path class='acc' d='" + line + "'></path>"

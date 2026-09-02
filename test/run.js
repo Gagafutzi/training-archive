@@ -453,6 +453,33 @@ test("the CSV carries one row per record, with its own commas escaped", () => {
   assert.ok(lines[1].includes('"Comparison, Numerical"'), "a comma in a label was not quoted");
 });
 
+
+/**
+ * The progress line is difficulty, not accuracy.
+ *
+ * An adaptive trainer holds accuracy at a target and moves the difficulty until
+ * it gets there, so accuracy is the controlled variable — flat whether you
+ * improved or not. `tools/chart.js` had this written down and the first version
+ * of the page drew the other line anyway, so it is a test now.
+ */
+test("a day carries the difficulty it was played at, in its own unit", () => {
+  const a = A.emptyArchive();
+  a.records = [
+    { source: "syl", id: "1", day: "2026-03-01", correct: 1, seconds: 30,
+      difficulty: 4, unit: "premises" },
+    { source: "syl", id: "2", day: "2026-03-01", correct: 0, seconds: 30,
+      difficulty: 6, unit: "premises" },
+    // No difficulty recorded — Anki reviews are like this on purpose.
+    { source: "syl", id: "3", day: "2026-03-02", correct: 1, seconds: 30 },
+  ];
+
+  const s = I.series(a, "syl");
+  assert.strictEqual(s[0].difficulty, 5, "the day's mean difficulty is wrong");
+  assert.strictEqual(s[0].unit, "premises", "the unit was dropped");
+  assert.strictEqual(s[1].difficulty, null,
+    "a day with no recorded difficulty was given one anyway");
+});
+
 for (const [name, fn] of cases) {
   try {
     fn();
