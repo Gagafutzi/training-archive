@@ -143,5 +143,30 @@ td:last-child { color: var(--ok); font-size: .8rem; }
 .chart .bars rect { fill: rgba(127, 127, 127, 0.45); }
 .chart .acc { fill: none; stroke: #46c476; stroke-width: 2; vector-effect: non-scaling-stroke; }
 
-#modes table { width: 100%; margin-bottom: 14px; }
-#modes h3 { margin: 0 0 4px; font-size: 0.95rem; }
+/*
+ * Not `.cards`. That grid is `minmax(15rem, 1fr)`, and a four-column table of
+ * labels like "Comparison Chronological" has a min-content width well past
+ * 15rem — a grid item will not shrink below that, so the track grew, the grid
+ * grew, and the whole page went wider than the body it sits in. Everything
+ * looked shifted because everything was.
+ *
+ * Wider tracks, `min-width: 0` so a stubborn child yields, and each table given
+ * its own scroll rather than being allowed to push its container.
+ */
+.modes {
+  display: grid;
+  gap: .75rem 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+}
+
+.modes > *, .cards > * { min-width: 0; }
+
+.modes table { width: 100%; margin-bottom: 14px; }
+.modes h3 { margin: 0 0 4px; font-size: 0.95rem; }
+
+/* Long labels wrap instead of setting the table's width. */
+.modes td:first-child { overflow-wrap: anywhere; }
+
+/* The heatmap is ~800px of squares; on a narrow window it scrolls rather than
+   dragging the page along with it. */
+.heatmap { max-inline-size: 100%; }
