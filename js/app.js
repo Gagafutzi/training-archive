@@ -31,6 +31,25 @@ function importText(text, name) {
     return;
   }
 
+  /* One of our own exports: a reading per source, folded one at a time so the
+     ordinary merge does the work. `writtenOn` comes from the file rather than
+     from today, or restoring an old backup would claim every day since as
+     covered. */
+  if (reading.archive) {
+    var total = { added: 0, updated: 0, days: 0 };
+    for (var i = 0; i < reading.readings.length; i++) {
+      var one = reading.readings[i];
+      var r = fold(archive, one, name, reading.writtenOn);
+      total.added += r.added; total.updated += r.updated; total.days += r.days;
+    }
+    var ok = cacheSave(archive);
+    note(name + " → archive (" + reading.readings.length + " sources): "
+      + total.added + " new, " + total.updated + " updated, "
+      + total.days + " new days" + (ok ? "" : " (cache full — keep the archive file)"));
+    render();
+    return;
+  }
+
   var out = fold(archive, reading, name);
   var saved = cacheSave(archive);
   note(name + " → " + reading.source + ": "
@@ -77,6 +96,24 @@ function importNeighbours() {
       }
     }
     if (syl.SYL_HISTORY) { importText(JSON.stringify(syl), "syllogimous (this browser)"); found++; }
+  } catch (e) { /* storage off */ }
+
+  /* The two that keep everything under a single key and export nothing at all,
+     so this button is the only route they have that does not involve reading
+     the browser's own files off disk. */
+  try {
+    var singles = [
+      { key: "mp_prog", label: "cct" },
+      { key: "attentional_shield_v2", label: "ewmt" },
+    ];
+    for (var s = 0; s < singles.length; s++) {
+      var val = localStorage.getItem(singles[s].key);
+      if (!val) continue;
+      var wrap = {};
+      wrap[singles[s].key] = val;
+      importText(JSON.stringify(wrap), singles[s].label + " (this browser)");
+      found++;
+    }
   } catch (e) { /* storage off */ }
 
   try {

@@ -536,12 +536,90 @@ function readEwmt(data) {
 }
 
 /* ------------------------------------------------------------------ *
+ * The archive's own export                                            *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Reading back a file this app wrote.
+ *
+ * This was missing, and its absence was the sharpest bug in the project: the
+ * archive exists so that clearing site data does not cost the record, it offers
+ * a Save button that writes the whole thing, and that file could not be put
+ * back. The backup was write-only.
+ *
+ * It does not fit the one-source adapter shape, and should not be bent into
+ * one: an archive spans sources, and its minutes, state and coverage are all
+ * keyed per source. So it comes back as one reading PER SOURCE, each exactly
+ * the shape that source's own adapter would have produced, and the existing
+ * fold merges them one at a time. No new merge logic, and the idempotence the
+ * tests already guarantee applies unchanged.
+ *
+ * `writtenOn` is carried because coverage depends on it: an export written on
+ * the 30th is evidence about every day up to the 30th, and restoring it as if
+ * it were written today would silently claim the days in between.
+ */
+function readArchiveExport(file) {
+  if (!file || typeof file !== "object") return null;
+  /* Our own schema is the number 1. A prepared single-source file says
+     "training-archive-source/1" and carries a `source`; this has neither. */
+  if (Number(file.schema) !== 1 || file.source) return null;
+  if (!Array.isArray(file.records)) return null;
+
+  var minutes = file.minutes && typeof file.minutes === "object" ? file.minutes : {};
+  var state = file.state && typeof file.state === "object" ? file.state : {};
+
+  var bySource = {};
+  for (var i = 0; i < file.records.length; i++) {
+    var r = file.records[i];
+    if (!r || !r.source) continue;
+    (bySource[r.source] || (bySource[r.source] = [])).push(r);
+  }
+
+  /* A source can hold minutes with no records — a day counted by the trainer
+     that produced no scored item — so the sources are the union, not just the
+     ones with rows. */
+  for (var k in minutes) {
+    if (Object.prototype.hasOwnProperty.call(minutes, k) && !bySource[k]) bySource[k] = [];
+  }
+
+  var names = Object.keys(bySource);
+  if (!names.length) return null;
+
+  var readings = [];
+  for (var n = 0; n < names.length; n++) {
+    var src = names[n];
+    /* The newest state this export holds for the source. It is keyed by the day
+       it was taken, and only the latest is worth carrying forward. */
+    var forSource = state[src], latest = null;
+    if (forSource && typeof forSource === "object") {
+      var days = Object.keys(forSource).sort();
+      if (days.length) latest = forSource[days[days.length - 1]];
+    }
+    readings.push({
+      source: src,
+      records: bySource[src],
+      minutes: minutes[src] || {},
+      state: latest,
+    });
+  }
+
+  var writtenOn = null;
+  if (file.updatedAt) {
+    var d = new Date(file.updatedAt);
+    if (!isNaN(d.getTime())) writtenOn = d.toISOString().slice(0, 10);
+  }
+
+  return { archive: true, writtenOn: writtenOn, readings: readings };
+}
+
+/* ------------------------------------------------------------------ *
  * Dispatch                                                            *
  * ------------------------------------------------------------------ */
 
 var ADAPTERS = [
-  /* First, because it identifies itself: a prepared file says what it is, so
-     nothing else needs to be asked whether it recognises it. */
+  /* First, because they identify themselves: both say what they are, so nothing
+     else needs to be asked whether it recognises them. */
+  { name: "archive", read: readArchiveExport },
   { name: "prepared", read: readPrepared },
   { name: "syllogimous", read: readSyllogimous },
   { name: "rnb", read: readRnb },
@@ -590,6 +668,7 @@ if (typeof module !== "undefined") {
     readCct: readCct,
     readEwmt: readEwmt,
     readPrepared: readPrepared,
+    readArchiveExport: readArchiveExport,
     MAX_ITEM_SECONDS: MAX_ITEM_SECONDS,
   };
 }
