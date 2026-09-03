@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { mergeRecords, hashRow, makeRecord } = require("../js/record.js");
-const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrepared } = require("../js/adapters.js");
+const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrepared, readArchiveExport } = require("../js/adapters.js");
 const { execFileSync } = require("child_process");
 const A = require("../js/archive.js");
 
@@ -609,6 +609,100 @@ test("re-importing the same snapshot does not double a day", () => {
   const first = mergeRecords([], readCct(dump).records);
   const again = mergeRecords(first.records, readCct(dump).records);
   assert.strictEqual(again.records.length, 2, "a re-import duplicated sessions");
+});
+
+/* ------------------------------------------------------------------ *
+ * Reading back our own export                                         *
+ * ------------------------------------------------------------------ *
+ *
+ * The archive exists so that clearing site data does not cost the record. That
+ * promise is only kept if the file it writes can be put back, and for a while
+ * it could not be — so these guard the round trip rather than the format.
+ */
+
+const exportFile = (records, extra) => Object.assign({
+  schema: 1,
+  updatedAt: Date.UTC(2026, 8, 3),
+  imports: [],
+  records,
+  minutes: { syl: { "2026-09-01": 12 }, rnb: { "2026-09-02": 30 } },
+  state: { rnb: { "2026-09-02": { bestLoad: 41 } } },
+  coverage: { syl: [["2026-09-01", "2026-09-03"]] },
+}, extra || {});
+
+const expRow = (source, id, day) => ({
+  source, id, at: Date.parse(day + "T12:00:00Z"), day,
+  kind: "item", seconds: 60, correct: 1, difficulty: null, unit: null,
+  label: "", raw: null,
+});
+
+test("an archive export comes back as one reading per source", () => {
+  const out = readArchiveExport(exportFile([
+    expRow("syl", "a", "2026-09-01"),
+    expRow("syl", "b", "2026-09-01"),
+    expRow("rnb", "c", "2026-09-02"),
+  ]));
+  assert.ok(out && out.archive, "our own export was not recognised");
+  const bySource = {};
+  out.readings.forEach(r => { bySource[r.source] = r; });
+  assert.deepStrictEqual(Object.keys(bySource).sort(), ["rnb", "syl"]);
+  assert.strictEqual(bySource.syl.records.length, 2);
+  assert.strictEqual(bySource.rnb.minutes["2026-09-02"], 30,
+    "per-source minutes were not carried back");
+  assert.deepStrictEqual(bySource.rnb.state, { bestLoad: 41 },
+    "the newest state for the source was not carried back");
+});
+
+test("a source with minutes but no records is still restored", () => {
+  /* A day the trainer counted that produced no scored item. Splitting by
+     records alone would drop it and the day would vanish from the record. */
+  const out = readArchiveExport(exportFile([expRow("rnb", "c", "2026-09-02")]));
+  const syl = out.readings.find(r => r.source === "syl");
+  assert.ok(syl, "a source known only from its minutes was dropped");
+  assert.strictEqual(syl.records.length, 0);
+  assert.strictEqual(syl.minutes["2026-09-01"], 12);
+});
+
+test("restoring an export puts every record back, once", () => {
+  const file = exportFile([
+    expRow("syl", "a", "2026-09-01"),
+    expRow("rnb", "c", "2026-09-02"),
+  ]);
+  const out = readArchiveExport(file);
+  const a = A.emptyArchive();
+  let added = 0;
+  out.readings.forEach(r => { added += A.fold(a, r, "restore", out.writtenOn).added; });
+  assert.strictEqual(added, 2);
+  assert.strictEqual(a.records.length, 2);
+
+  let again = 0;
+  out.readings.forEach(r => { again += A.fold(a, r, "restore", out.writtenOn).added; });
+  assert.strictEqual(again, 0, "restoring the same backup twice duplicated records");
+  assert.strictEqual(a.records.length, 2);
+});
+
+test("a restored export is evidence about the day it was written, not today", () => {
+  const out = readArchiveExport(exportFile([expRow("syl", "a", "2026-09-01")]));
+  assert.strictEqual(out.writtenOn, "2026-09-03");
+  const a = A.emptyArchive();
+  A.fold(a, out.readings.find(r => r.source === "syl"), "restore", out.writtenOn);
+  assert.deepStrictEqual(a.coverage.syl, [["2026-09-01", "2026-09-03"]],
+    "an old backup restored today must not claim the days since");
+});
+
+test("the archive reader does not claim files belonging to anything else", () => {
+  assert.strictEqual(readArchiveExport(
+    { schema: "training-archive-source/1", source: "syl", records: [] }), null,
+    "a prepared single-source file is not an archive");
+  assert.strictEqual(readArchiveExport({ SYL_HISTORY: "[]" }), null);
+  assert.strictEqual(readArchiveExport({ schema: 1 }), null);
+  assert.strictEqual(readArchiveExport({ schema: 1, records: [] }), null,
+    "an export with nothing in it says nothing");
+});
+
+test("dispatch routes our own export to the archive reader", () => {
+  const out = readFile(JSON.stringify(exportFile([expRow("syl", "a", "2026-09-01")])));
+  assert.ok(out.archive, out.error || "the export was not recognised by readFile");
 });
 
 for (const [name, fn] of cases) {
