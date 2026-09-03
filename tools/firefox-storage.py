@@ -267,6 +267,40 @@ def syllogimous_v3_from(store):
     return {"records": records, "minutes": minutes}
 
 
+def cct_from(store):
+    """The one key its progress lives under, handed over as its adapter reads it.
+
+    CCT has no history export — its Share button writes settings and profiles
+    only — so this snapshot is the sole route its record has into the archive.
+    It also keeps just the last hundred sessions, so how often this runs decides
+    how much of the history survives at all.
+    """
+    raw = store.get("mp_prog")
+    if not raw:
+        return None
+    try:
+        prog = json.loads(raw)
+    except ValueError:
+        return None
+    if not prog.get("history"):
+        return None
+    return {"mp_prog": raw}
+
+
+def ewmt_from(store):
+    """Likewise the one key, and likewise the only copy: eWMT exports nothing."""
+    raw = store.get("attentional_shield_v2")
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not data.get("sessions"):
+        return None
+    return {"attentional_shield_v2": raw}
+
+
 def rnb_from(store):
     """One payload per profile: RNB keeps a whole record under each."""
     out = []
@@ -354,6 +388,27 @@ def main():
                         "minutes": v3["minutes"],
                     }, fh)
                 print("  syllogimous-v3 %-50s %5d items" % (label, len(v3["records"])))
+                written.append(path)
+
+            cct = cct_from(store)
+            if cct:
+                cct["__origin"] = label
+                path = os.path.join(args.outdir, "cct-%s.json" % safe)
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(cct, fh)
+                n = len(json.loads(cct["mp_prog"])["history"])
+                print("  cct          %-52s %5d sessions%s"
+                      % (label, n, " (at the 100 cap)" if n >= 100 else ""))
+                written.append(path)
+
+            ewmt = ewmt_from(store)
+            if ewmt:
+                ewmt["__origin"] = label
+                path = os.path.join(args.outdir, "ewmt-%s.json" % safe)
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(ewmt, fh)
+                n = len(json.loads(ewmt["attentional_shield_v2"])["sessions"])
+                print("  ewmt         %-52s %5d sessions" % (label, n))
                 written.append(path)
 
             for name, data in rnb_from(store):

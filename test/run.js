@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { mergeRecords, hashRow, makeRecord } = require("../js/record.js");
-const { readFile, readSyllogimous, readRnb, readPrepared } = require("../js/adapters.js");
+const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrepared } = require("../js/adapters.js");
 const { execFileSync } = require("child_process");
 const A = require("../js/archive.js");
 
@@ -478,6 +478,137 @@ test("a day carries the difficulty it was played at, in its own unit", () => {
   assert.strictEqual(s[0].unit, "premises", "the unit was dropped");
   assert.strictEqual(s[1].difficulty, null,
     "a day with no recorded difficulty was given one anyway");
+});
+
+/* ------------------------------------------------------------------ *
+ * CCT and eWMT                                                        *
+ * ------------------------------------------------------------------ *
+ *
+ * Both arrive as a localStorage snapshot rather than an export, because
+ * neither app has one. So the thing most worth testing is the sniff: three
+ * sources now read a flat key/value map, and each must claim only its own.
+ */
+
+const cctDump = (history, extra) => ({
+  mp_prog: JSON.stringify(Object.assign({
+    sessions: 7, totalQ: 900, totalCorrect: 700, longestStreak: 4, history,
+  }, extra || {})),
+});
+
+test("CCT: a session becomes one record, with speed carried as a rate", () => {
+  const out = readCct(cctDump([
+    { ts: 1756800000000, acc: 80, correct: 40, total: 50,
+      lowestISI: 2000, durationSec: 300, nback: 2, ict: false },
+  ]));
+  assert.strictEqual(out.source, "cct");
+  assert.strictEqual(out.records.length, 1);
+  const r = out.records[0];
+  assert.strictEqual(r.correct, 0.8, "accuracy should come from the counts");
+  assert.strictEqual(r.difficulty, 30, "2000ms between items is 30 a minute");
+  assert.strictEqual(r.unit, "cct-peak-items-per-min");
+  assert.strictEqual(r.seconds, 300);
+  assert.strictEqual(out.minutes[r.day], 5, "five minutes on that day");
+});
+
+test("CCT: the never-set ISI sentinel is not read as a difficulty", () => {
+  const out = readCct(cctDump([
+    { ts: 1756800000000, acc: 50, correct: 5, total: 10,
+      lowestISI: 9999, durationSec: 60, nback: 1 },
+  ]));
+  assert.strictEqual(out.records[0].difficulty, null,
+    "9999 is the app's placeholder, not a speed anybody reached");
+});
+
+test("CCT: the lifetime counters survive even though they carry no dates", () => {
+  const out = readCct(cctDump([
+    { ts: 1756800000000, acc: 80, correct: 4, total: 5, durationSec: 30, nback: 1 },
+  ]));
+  assert.strictEqual(out.state.lifetimeSessions, 7,
+    "the history is a hundred-session tail; the counters are all that says so");
+  assert.strictEqual(out.state.lifetimeQuestions, 900);
+});
+
+const ewmtDump = sessions => ({
+  attentional_shield_v2: JSON.stringify({
+    sessions, totalMs: 0, bestN: 3, createdAt: 1756000000000, daily: {},
+  }),
+});
+
+test("eWMT: a session becomes one record on its own n scale", () => {
+  const out = readEwmt(ewmtDump([
+    { timestamp: 1756800000000, durationMs: 600000, bestN: 3,
+      overallDPrime: 2.1, overallAccuracy: 75, trialsCompleted: 40,
+      modalityStats: [{ type: "audio", d: 2, acc: 80, hits: 8, fa: 1, miss: 2 },
+                      { type: "position", d: 2.2, acc: 70, hits: 7, fa: 2, miss: 3 }],
+      settings: { n: 3 } },
+  ]));
+  assert.strictEqual(out.source, "ewmt");
+  const r = out.records[0];
+  assert.strictEqual(r.correct, 0.75);
+  assert.strictEqual(r.difficulty, 3);
+  assert.strictEqual(r.unit, "ewmt-n");
+  assert.strictEqual(r.seconds, 600);
+  assert.strictEqual(out.minutes[r.day], 10);
+  assert.strictEqual(r.raw.dPrime, 2.1, "d-prime is the better measure; keep it");
+  assert.strictEqual(r.raw.modalityStats.length, 2,
+    "the per-channel breakdown is the only record of WHICH channel ran out");
+});
+
+test("eWMT: a session with no targets has no accuracy, rather than zero", () => {
+  /* The app writes 0% when it never presented a target, and the first real
+     capture was 49 such sessions — abandoned starts of a few seconds each. */
+  const out = readEwmt(ewmtDump([
+    { timestamp: 1756800000000, durationMs: 3000, bestN: 2,
+      overallDPrime: 0, overallAccuracy: 0, trialsCompleted: 0,
+      modalityStats: [{ type: "audio", hits: 0, fa: 0, miss: 0 },
+                      { type: "position", hits: 0, fa: 0, miss: 0 }] },
+  ]));
+  const r = out.records[0];
+  assert.strictEqual(r.correct, null,
+    "no targets presented is no reading, not a score of zero");
+  assert.strictEqual(r.seconds, 3, "the time was still spent and still counts");
+  assert.strictEqual(r.raw.targets, 0);
+});
+
+test("eWMT: a real zero is still a zero", () => {
+  const out = readEwmt(ewmtDump([
+    { timestamp: 1756800000000, durationMs: 60000, bestN: 2,
+      overallDPrime: 0, overallAccuracy: 0, trialsCompleted: 20,
+      modalityStats: [{ type: "audio", hits: 0, fa: 3, miss: 5 }] },
+  ]));
+  assert.strictEqual(out.records[0].correct, 0,
+    "eight targets and none caught is a genuine zero");
+});
+
+test("neither new adapter claims a file belonging to another source", () => {
+  assert.strictEqual(readCct(ewmtDump([])), null);
+  assert.strictEqual(readEwmt(cctDump([])), null);
+  assert.strictEqual(readCct({ SYL_HISTORY: "[]" }), null);
+  assert.strictEqual(readEwmt({ SYL_HISTORY: "[]" }), null);
+  assert.strictEqual(readCct({ mp_prog: "not json" }), null);
+  assert.strictEqual(readEwmt({ attentional_shield_v2: "{}" }), null);
+});
+
+test("dispatch routes each snapshot to its own adapter", () => {
+  const cct = readFile(JSON.stringify(cctDump([
+    { ts: 1756800000000, acc: 80, correct: 4, total: 5, durationSec: 30, nback: 1 },
+  ])));
+  assert.strictEqual(cct.source, "cct", cct.error || "");
+  const ewmt = readFile(JSON.stringify(ewmtDump([
+    { timestamp: 1756800000000, durationMs: 60000, bestN: 2,
+      overallAccuracy: 50, trialsCompleted: 10, modalityStats: [] },
+  ])));
+  assert.strictEqual(ewmt.source, "ewmt", ewmt.error || "");
+});
+
+test("re-importing the same snapshot does not double a day", () => {
+  const dump = cctDump([
+    { ts: 1756800000000, acc: 80, correct: 4, total: 5, durationSec: 60, nback: 1 },
+    { ts: 1756803600000, acc: 60, correct: 3, total: 5, durationSec: 60, nback: 1 },
+  ]);
+  const first = mergeRecords([], readCct(dump).records);
+  const again = mergeRecords(first.records, readCct(dump).records);
+  assert.strictEqual(again.records.length, 2, "a re-import duplicated sessions");
 });
 
 for (const [name, fn] of cases) {

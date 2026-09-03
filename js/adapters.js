@@ -333,6 +333,209 @@ function readPrepared(file) {
 }
 
 /* ------------------------------------------------------------------ *
+ * CCT — Cognitive Control Training                                    *
+ * ------------------------------------------------------------------ */
+
+/**
+ * A flat map of localStorage keys to strings, the same shape the Syllogimous
+ * reader takes, because CCT has no history export at all: its Share button
+ * writes settings and profiles only. The record therefore reaches the archive
+ * as a storage snapshot — see `tools/firefox-storage.py`.
+ *
+ * **It keeps the last hundred sessions and no more.** Everything before that
+ * survives only as running totals (`sessions`, `totalQ`, `totalCorrect`) with
+ * no dates on them, so it cannot be put on a calendar and is deliberately not
+ * read here — the same call the Syllogimous reader makes about its trial log.
+ * Snapshot often enough and the cap never bites; snapshot rarely and the gap is
+ * real and silent, which is worth knowing rather than papering over.
+ */
+function readCct(data) {
+  var raw = data && typeof data === "object" ? data.mp_prog : null;
+  if (typeof raw !== "string") return null;
+
+  var prog;
+  try { prog = JSON.parse(raw); } catch (e) { return null; }
+  if (!prog || !Array.isArray(prog.history)) return null;
+
+  var origin = typeof data.__origin === "string" ? data.__origin : null;
+  var records = [];
+  var minutes = {};
+
+  for (var i = 0; i < prog.history.length; i++) {
+    var h = prog.history[i];
+    if (!h || !h.ts) continue;
+
+    /* No id on a session, so the event is its own key — the same three-field
+       hash the other readers use. */
+    var id = _hashRow(h.ts + "|" + h.total + "|" + h.correct);
+    var seconds = Math.max(0, Number(h.durationSec) || 0);
+
+    /* Accuracy from the counts rather than the stored `acc`, which is rounded
+       to a whole percent for the display. */
+    var total = Number(h.total) || 0;
+    var correct = total ? Number(h.correct) / total
+                : (h.acc == null ? null : Number(h.acc) / 100);
+
+    /* CCT adapts SPEED, and its own number for that is the fastest interval
+       reached — where lower means harder. Carried as a rate instead, because
+       every other difficulty in the archive rises with difficulty and a single
+       inverted axis is exactly the kind of thing a later chart reads the wrong
+       way round without anyone noticing. The interval itself stays in `raw`.
+       9999 is the app's own "never set" sentinel. */
+    var isi = Number(h.lowestISI);
+    var rate = (isi > 0 && isi < 9999) ? 60000 / isi : null;
+
+    records.push(_makeRecord({
+      source: "cct",
+      id: id,
+      at: h.ts,
+      kind: "block",
+      seconds: seconds,
+      correct: correct,
+      difficulty: rate == null ? null : Math.round(rate * 100) / 100,
+      unit: "cct-peak-items-per-min",
+      label: "n" + (h.nback == null ? "?" : h.nback) + (h.ict ? " ict" : ""),
+      raw: {
+        origin: origin,
+        acc: h.acc == null ? null : Number(h.acc),
+        correct: h.correct == null ? null : Number(h.correct),
+        total: total || null,
+        lowestISI: isi > 0 && isi < 9999 ? isi : null,
+        durationSec: seconds,
+        nback: h.nback == null ? null : h.nback,
+        ict: !!h.ict,
+      },
+    }));
+
+    var day = new Date(h.ts).toISOString().slice(0, 10);
+    minutes[day] = (minutes[day] || 0) + seconds / 60;
+  }
+
+  if (!records.length) return null;
+
+  /* The lifetime counters, which outlive the hundred-session window and are the
+     only trace of anything older. Not records — they have no dates — but worth
+     keeping so a reader can see that the history is a tail, not the whole. */
+  var state = {};
+  if (prog.sessions != null) state.lifetimeSessions = Number(prog.sessions);
+  if (prog.totalQ != null) state.lifetimeQuestions = Number(prog.totalQ);
+  if (prog.totalCorrect != null) state.lifetimeCorrect = Number(prog.totalCorrect);
+  if (prog.longestStreak != null) state.longestStreak = Number(prog.longestStreak);
+
+  return {
+    source: "cct",
+    records: records,
+    minutes: minutes,
+    state: Object.keys(state).length ? state : null,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * eWMT — the Attentional Shield n-back                                *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Also a storage snapshot: eWMT has no export of any kind, so there is no file
+ * format to read and the browser's own store is the only copy there has ever
+ * been.
+ *
+ * Unlike CCT it keeps every session it has ever run, so the whole record is
+ * here whenever the snapshot is taken.
+ */
+function readEwmt(data) {
+  var raw = data && typeof data === "object" ? data.attentional_shield_v2 : null;
+  if (typeof raw !== "string") return null;
+
+  var store;
+  try { store = JSON.parse(raw); } catch (e) { return null; }
+  if (!store || !Array.isArray(store.sessions)) return null;
+
+  var origin = typeof data.__origin === "string" ? data.__origin : null;
+  var records = [];
+  var minutes = {};
+
+  for (var i = 0; i < store.sessions.length; i++) {
+    var s = store.sessions[i];
+    if (!s || !s.timestamp) continue;
+
+    var id = _hashRow(s.timestamp + "|" + s.trialsCompleted + "|" + s.durationMs);
+    var seconds = Math.max(0, Number(s.durationMs) || 0) / 1000;
+
+    var mods = Array.isArray(s.modalityStats) ? s.modalityStats : [];
+    var names = mods.map(function (m) { return m && m.type; })
+                    .filter(Boolean).sort();
+
+    /* The app's own accuracy, which counts a miss against you as well as a false
+       alarm — hits / (hits + false alarms + misses).
+
+       **A session with no targets in it is not a session scored zero.** eWMT
+       computes `totalTargets > 0 ? ... : 0`, so a start that was abandoned
+       before the first target — which every session in the first real capture
+       turned out to be, 49 of them, two to thirty-three seconds long — is
+       written as 0% rather than as no reading. Passing that through would have
+       held the whole eWMT accuracy line at the floor with nothing behind it.
+
+       Targets are counted from the per-modality breakdown, which is the only
+       place they survive. When that is missing there is nothing to count, and
+       the app's own number is taken at face value rather than guessed at. */
+    var targets = null;
+    if (mods.length) {
+      targets = 0;
+      for (var m = 0; m < mods.length; m++) {
+        targets += (Number(mods[m].hits) || 0) + (Number(mods[m].miss) || 0);
+      }
+    }
+    var acc = s.overallAccuracy == null ? null : Number(s.overallAccuracy) / 100;
+    if (targets === 0) acc = null;
+
+    records.push(_makeRecord({
+      source: "ewmt",
+      id: id,
+      at: s.timestamp,
+      kind: "block",
+      seconds: seconds,
+      correct: acc,
+      /* The highest n the session actually reached, which is the axis it
+         adapts along. */
+      difficulty: s.bestN == null ? null : Number(s.bestN),
+      unit: "ewmt-n",
+      label: "n" + (s.bestN == null ? "?" : s.bestN)
+             + (names.length ? "/" + names.join("+") : ""),
+      raw: {
+        origin: origin,
+        bestN: s.bestN == null ? null : Number(s.bestN),
+        dPrime: s.overallDPrime == null ? null : Number(s.overallDPrime),
+        accuracy: s.overallAccuracy == null ? null : Number(s.overallAccuracy),
+        trialsCompleted: s.trialsCompleted == null ? null : Number(s.trialsCompleted),
+        /* Kept so the null above can be told from a genuinely missing field. */
+        targets: targets,
+        /* Per-modality hits, false alarms and misses: the breakdown is the only
+           place that says WHICH channel the memory ran out on, and no later
+           snapshot reconstructs it. */
+        modalityStats: mods,
+        settings: s.settings || null,
+      },
+    }));
+
+    var day = new Date(s.timestamp).toISOString().slice(0, 10);
+    minutes[day] = (minutes[day] || 0) + seconds / 60;
+  }
+
+  if (!records.length) return null;
+
+  var state = {};
+  if (store.bestN != null) state.bestN = Number(store.bestN);
+  if (store.createdAt != null) state.createdAt = Number(store.createdAt);
+
+  return {
+    source: "ewmt",
+    records: records,
+    minutes: minutes,
+    state: Object.keys(state).length ? state : null,
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Dispatch                                                            *
  * ------------------------------------------------------------------ */
 
@@ -342,6 +545,8 @@ var ADAPTERS = [
   { name: "prepared", read: readPrepared },
   { name: "syllogimous", read: readSyllogimous },
   { name: "rnb", read: readRnb },
+  { name: "cct", read: readCct },
+  { name: "ewmt", read: readEwmt },
 ];
 
 /**
@@ -382,6 +587,8 @@ if (typeof module !== "undefined") {
     readFile: readFile,
     readSyllogimous: readSyllogimous,
     readRnb: readRnb,
+    readCct: readCct,
+    readEwmt: readEwmt,
     readPrepared: readPrepared,
     MAX_ITEM_SECONDS: MAX_ITEM_SECONDS,
   };
