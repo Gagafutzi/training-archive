@@ -87,11 +87,29 @@ function readSyllogimous(data) {
       kind: "item",
       seconds: seconds,
       correct: scoreSyllogimous(q),
-      /* Premises, not the ability level: the level is decided per answer by a
-         model whose state the history does not carry. Naming the unit is what
-         keeps that honest. */
-      difficulty: Array.isArray(q.premises) ? q.premises.length : null,
-      unit: "syllogimous-premises",
+      /*
+       * The item's own difficulty, on the scale the app actually reasons in.
+       *
+       * This was the premise count, on the argument that "the level is decided
+       * per answer by a model whose state the history does not carry". True
+       * when it was written, and the reason it was wrong to leave: a premise
+       * count says a seven-premise linear chain and a seven-premise 7D space
+       * are the same item, and says nothing at all about the rungs it carried
+       * or the clock it was under. Those are most of what makes a Syllogimous
+       * item hard.
+       *
+       * The app now prices each answered item with `levelOf` — the same
+       * function its ability model uses — and stores the result. Read, never
+       * recomputed: rebuilding it here would be a second copy of a formula that
+       * has per-mode weights and per-rung costs, and the two would drift.
+       *
+       * Older answers have no level and keep the premise count, under a
+       * different unit. That is not a gap to paper over: they are different
+       * quantities, and the archive's rule is that a difficulty always travels
+       * with what it is measured in.
+       */
+      difficulty: syllogimousDifficulty(q),
+      unit: syllogimousUnit(q),
       label: q.type || "unknown",
       /*
        * **The whole question, kept.**
@@ -171,6 +189,31 @@ function readSyllogimous(data) {
  * is not the item — which is the rule the app scores by, so it is the rule the
  * archive has to record by or the two will disagree about the same evening.
  */
+/**
+ * What one Syllogimous item was worth, and what that number means.
+ *
+ * Two units, deliberately kept apart. `syllogimous-level` is the app's own
+ * difficulty scale, which prices the mode's weight, the premises, the rungs the
+ * item carried, the clock it was under and how the premises were shown.
+ * `syllogimous-premises` is the premise count, which is all the older records
+ * can offer.
+ *
+ * They are not convertible — a level of 9 is not nine premises — so they are
+ * never mixed. Everything downstream carries the unit with the number for
+ * exactly this reason.
+ */
+function syllogimousDifficulty(q) {
+  var d = q && q.difficulty;
+  if (d && typeof d.level === "number" && isFinite(d.level)) return d.level;
+  return Array.isArray(q && q.premises) ? q.premises.length : null;
+}
+
+function syllogimousUnit(q) {
+  var d = q && q.difficulty;
+  if (d && typeof d.level === "number" && isFinite(d.level)) return "syllogimous-level";
+  return "syllogimous-premises";
+}
+
 function scoreSyllogimous(q) {
   if (Array.isArray(q.seriesAnswers) && Array.isArray(q.series) && q.series.length > 1) {
     for (var i = 0; i < q.series.length; i++) {

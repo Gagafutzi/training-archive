@@ -705,6 +705,85 @@ test("dispatch routes our own export to the archive reader", () => {
   assert.ok(out.archive, out.error || "the export was not recognised by readFile");
 });
 
+/* ------------------------------------------------------------------ *
+ * Difficulty, and the units it is measured in
+ * ------------------------------------------------------------------ */
+
+/*
+ * Reported: *"how will the archive possibly give a good estimate of syllogimous
+ * performance without keeping rungs into account, also premise count in linear
+ * compared to space 7d is a completely different game"*.
+ *
+ * The adapter was reading `q.premises.length`, so every item of every mode was
+ * priced by how many sentences it had. The app now stores the level its own
+ * ability model computes; this is about reading that, and about never mixing it
+ * with the premise counts the older records carry.
+ */
+const synth = (over) => Object.assign({
+  type: "Distinction", premises: ["a", "b", "c", "d"],
+  createdAt: 1000, answeredAt: 6000, userAnswer: true, isValid: true,
+}, over || {});
+
+const syllExport = (questions) => ({ SYL_HISTORY: JSON.stringify(questions) });
+
+test("an item's stored level is what the archive reads", () => {
+  const recs = readSyllogimous(syllExport([
+    synth({ difficulty: { level: 12.5, premises: 4, rungs: ["negation"], seconds: 60, carousel: true } }),
+  ])).records;
+  assert.strictEqual(recs.length, 1);
+  assert.strictEqual(recs[0].difficulty, 12.5, "the archive is still reading the premise count");
+  assert.strictEqual(recs[0].unit, "syllogimous-level");
+});
+
+test("two modes with the same premise count are no longer the same difficulty", () => {
+  const recs = readSyllogimous(syllExport([
+    synth({ type: "Linear Arrangement", difficulty: { level: 7.2, premises: 7, rungs: [], seconds: null, carousel: false } }),
+    synth({ type: "Direction3D Spatial", answeredAt: 7000, difficulty: { level: 15.9, premises: 7, rungs: [], seconds: null, carousel: false } }),
+  ])).records;
+  assert.strictEqual(recs.length, 2);
+  assert.notStrictEqual(recs[0].difficulty, recs[1].difficulty,
+    "seven premises priced identically in two modes — the reported fault");
+});
+
+test("an answer from before the level existed keeps its own unit", () => {
+  const recs = readSyllogimous(syllExport([synth({})])).records;
+  assert.strictEqual(recs[0].difficulty, 4, "the premise-count fallback stopped working");
+  assert.strictEqual(recs[0].unit, "syllogimous-premises",
+    "an old record was labelled with the new scale");
+});
+
+test("a day that straddles the change of scale does not average across it", () => {
+  const day = "2026-09-01T12:00:00Z";
+  const at = Date.parse(day);
+  const rows = [];
+  // Four old records at 4 premises, one new record at level 30.
+  for (let i = 0; i < 4; i++) {
+    rows.push(makeRecord({ source: "syllogimous", id: "old" + i, at: at + i, kind: "item",
+      seconds: 5, correct: 1, difficulty: 4, unit: "syllogimous-premises" }));
+  }
+  rows.push(makeRecord({ source: "syllogimous", id: "new", at: at + 9, kind: "item",
+    seconds: 5, correct: 1, difficulty: 30, unit: "syllogimous-level" }));
+
+  const s = I.series({ records: rows }, "syllogimous", 1);
+  assert.strictEqual(s.length, 1, "expected one day");
+  assert.strictEqual(s[0].unit, "syllogimous-premises",
+    "the day should report the unit most of it was measured in");
+  assert.strictEqual(s[0].difficulty, 4,
+    "the level was folded into the premise counts — that is a mean of two "
+    + "different quantities, reported under one of their names");
+});
+
+test("once every answer carries a level, the day reports levels", () => {
+  const at = Date.parse("2026-09-02T12:00:00Z");
+  const rows = [
+    makeRecord({ source: "syllogimous", id: "a", at: at, kind: "item", seconds: 5, correct: 1, difficulty: 10, unit: "syllogimous-level" }),
+    makeRecord({ source: "syllogimous", id: "b", at: at + 1, kind: "item", seconds: 5, correct: 0, difficulty: 20, unit: "syllogimous-level" }),
+  ];
+  const s = I.series({ records: rows }, "syllogimous", 1);
+  assert.strictEqual(s[0].unit, "syllogimous-level");
+  assert.strictEqual(s[0].difficulty, 15);
+});
+
 for (const [name, fn] of cases) {
   try {
     fn();

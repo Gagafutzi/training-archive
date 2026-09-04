@@ -140,6 +140,24 @@ function streaks(archive, endDay) {
  * a day with three answers is a coin toss wearing a percentage, and drawing it
  * beside a day with two hundred invites reading noise as a trend.
  */
+/**
+ * The day's difficulty, in the unit most of it was measured in.
+ *
+ * A day that straddles a change of scale has no single honest average, so the
+ * larger sample wins and the smaller is dropped rather than folded in. One day
+ * of a slightly thin line beats a point that is the mean of two different
+ * quantities.
+ */
+function dominant(byUnit) {
+  var best = null;
+  for (var unit in byUnit) {
+    if (!Object.prototype.hasOwnProperty.call(byUnit, unit)) continue;
+    var u = byUnit[unit];
+    if (!best || u.n > best.n) best = { unit: unit || null, n: u.n, mean: u.sum / u.n };
+  }
+  return best || { unit: null, n: 0, mean: null };
+}
+
 function series(archive, source, minItems) {
   var floor = minItems == null ? 10 : minItems;
   var byDay = {};
@@ -148,12 +166,26 @@ function series(archive, source, minItems) {
     var r = archive.records[i];
     if (r.source !== source) continue;
     var d = (byDay[r.day] ??= {
-      day: r.day, n: 0, right: 0, seconds: 0, difficulty: 0, graded: 0, unit: null,
+      day: r.day, n: 0, right: 0, seconds: 0, byUnit: {},
     });
     d.n++;
     if (r.correct) d.right++;
     d.seconds += r.seconds || 0;
-    if (r.difficulty != null) { d.difficulty += r.difficulty; d.graded++; d.unit = r.unit; }
+    /*
+     * Difficulties are summed per unit, never across them.
+     *
+     * This used to add every difficulty into one total and keep whichever unit
+     * happened to come last, so a day that mixed two scales reported their mean
+     * under one of their names. Nothing mixed them while each source had a
+     * single unit forever — and then Syllogimous started reporting levels
+     * instead of premise counts, and the changeover day would have averaged a
+     * level of 9 with a premise count of 4 and called the result premises.
+     */
+    if (r.difficulty != null) {
+      var u = (d.byUnit[r.unit || ""] ??= { sum: 0, n: 0 });
+      u.sum += r.difficulty;
+      u.n++;
+    }
   }
 
   return Object.keys(byDay).sort().map(function (day) {
@@ -170,8 +202,8 @@ function series(archive, source, minItems) {
        * controller is working and says nothing about whether you improved. What
        * improved is whatever had to rise to keep it flat.
        */
-      difficulty: d.graded ? d.difficulty / d.graded : null,
-      unit: d.unit,
+      difficulty: dominant(d.byUnit).mean,
+      unit: dominant(d.byUnit).unit,
       accuracy: d.n >= floor ? d.right / d.n : null,
     };
   });
