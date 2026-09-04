@@ -797,6 +797,27 @@ test("once every answer carries a level, the day reports levels", () => {
   assert.strictEqual(s[0].difficulty, 15);
 });
 
+test("a source summary reports the unit most of it is measured in", () => {
+  /*
+   * The oldest Syllogimous record is a premise count and always will be, so a
+   * summary reading the unit off `records[0]` would say "premises" for good —
+   * including long after every new answer is a level.
+   */
+  const at = Date.parse("2026-09-01T12:00:00Z");
+  const rows = [];
+  rows.push(makeRecord({ source: "syllogimous", id: "old", at: at, kind: "item",
+    seconds: 5, correct: 1, difficulty: 4, unit: "syllogimous-premises" }));
+  for (let i = 0; i < 5; i++) {
+    rows.push(makeRecord({ source: "syllogimous", id: "new" + i, at: at + 1000 + i, kind: "item",
+      seconds: 5, correct: 1, difficulty: 11, unit: "syllogimous-level" }));
+  }
+  const s = A.sourceSummary({ records: rows, minutes: {} }, "syllogimous");
+  assert.ok(s, "no summary produced");
+  assert.strictEqual(s.unit, "syllogimous-level",
+    "the summary is reporting the unit of its oldest record");
+  assert.strictEqual(s.records, 6);
+});
+
 for (const [name, fn] of cases) {
   try {
     fn();

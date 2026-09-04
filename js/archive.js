@@ -249,6 +249,19 @@ function sourceSummary(archive, source) {
   var dayCount = 0;
   for (var day in minutes) { totalMinutes += minutes[day]; dayCount++; }
 
+  /* Ties go to the later record, so a source mid-changeover reports the scale
+     it is moving to rather than the one it is leaving. */
+  function dominantUnit(rows) {
+    var counts = {}, best = null, bestN = -1;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].difficulty == null) continue;
+      var u = rows[i].unit || "";
+      counts[u] = (counts[u] || 0) + 1;
+      if (counts[u] >= bestN) { bestN = counts[u]; best = rows[i].unit || null; }
+    }
+    return best;
+  }
+
   var scored = records.filter(function (r) { return r.correct != null; });
   var accuracy = scored.length
     ? scored.reduce(function (a, r) { return a + r.correct; }, 0) / scored.length
@@ -258,7 +271,18 @@ function sourceSummary(archive, source) {
     source: source,
     records: records.length,
     kind: records[0].kind,
-    unit: records[0].unit,
+    /*
+     * The unit most of the source's records are measured in, not the first
+     * one's.
+     *
+     * Reading it off `records[0]` was fine while a source reported one quantity
+     * forever, and wrong the moment Syllogimous started reporting its own
+     * difficulty level where it used to report a premise count: the oldest
+     * record is a premise count and always will be, so the summary would have
+     * said "premises" for good — including long after every new answer was a
+     * level. Same fault the day series had, one level up.
+     */
+    unit: dominantUnit(records),
     days: dayCount,
     minutes: totalMinutes,
     accuracy: accuracy,
