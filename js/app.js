@@ -227,13 +227,46 @@ function renderCharts() {
     if (!pts.length) return;
 
     var W = 720, H = 120, pad = 4;
-    var peak = 1, dHi = null, dLo = null, unit = null;
+
+    /*
+     * One line, one unit.
+     *
+     * This took whichever unit came last and scaled every day against one
+     * range, which was harmless while a source reported the same quantity
+     * forever. Syllogimous now reports its own difficulty level where it used
+     * to report a premise count, so a window that straddles the change holds
+     * days measured in both — and drawn this way that is a line climbing from
+     * five to thirty and a caption naming one of the two scales.
+     *
+     * The window is drawn in the unit most of its days are in. Days in another
+     * are counted and said, and the line breaks across them, for exactly the
+     * reason it already breaks across a day nobody played: a segment drawn
+     * through them would read as a trend, and it would be a trend between two
+     * different quantities.
+     */
+    var counts = {};
+    pts.forEach(function (p) {
+      if (p.difficulty == null) return;
+      counts[p.unit || ""] = (counts[p.unit || ""] || 0) + 1;
+    });
+    var unit = null, best = 0, otherDays = 0;
+    Object.keys(counts).forEach(function (u) {
+      if (counts[u] > best) { best = counts[u]; unit = u || null; }
+    });
+    Object.keys(counts).forEach(function (u) {
+      if ((u || null) !== unit) otherDays += counts[u];
+    });
+
+    var inUnit = function (p) {
+      return p.difficulty != null && (p.unit || null) === unit;
+    };
+
+    var peak = 1, dHi = null, dLo = null;
     pts.forEach(function (p) {
       if (p.minutes > peak) peak = p.minutes;
-      if (p.difficulty == null) return;
+      if (!inUnit(p)) return;
       if (dHi === null || p.difficulty > dHi) dHi = p.difficulty;
       if (dLo === null || p.difficulty < dLo) dLo = p.difficulty;
-      unit = p.unit || unit;
     });
     var step = (W - pad * 2) / Math.max(1, pts.length);
     var range = (dHi != null && dHi > dLo) ? dHi - dLo : 1;
@@ -245,7 +278,7 @@ function renderCharts() {
       bars += "<rect x='" + fmt(x, 1) + "' y='" + fmt(H - pad - h, 1)
         + "' width='" + fmt(Math.max(1, step - 1), 1) + "' height='" + fmt(h, 1)
         + "'><title>" + p.day + " — " + fmt(p.minutes) + "m, " + p.n + " items"
-        + (p.difficulty == null ? "" : ", " + fmt(p.difficulty, 1) + " " + (unit || "difficulty"))
+        + (p.difficulty == null ? "" : ", " + fmt(p.difficulty, 1) + " " + (p.unit || "difficulty"))
         + (p.accuracy == null ? "" : ", " + fmt(100 * p.accuracy) + "% right")
         + "</title></rect>";
 
@@ -254,7 +287,7 @@ function renderCharts() {
        * gap. A straight segment across a fortnight nobody played reads as a
        * trend through it, which is the one thing the picture must not say.
        */
-      if (p.difficulty == null) { open = false; return; }
+      if (!inUnit(p)) { open = false; return; }
       var y = pad + (H - pad * 2) * (1 - (p.difficulty - dLo) / range);
       line += (open ? " L" : " M") + fmt(x + step / 2, 1) + " " + fmt(y, 1);
       open = true;
@@ -267,7 +300,11 @@ function renderCharts() {
       + (dHi == null
           ? " · no difficulty recorded"
           : " · line is " + (unit || "difficulty") + ", "
-            + fmt(dLo, 1) + "&ndash;" + fmt(dHi, 1))
+            + fmt(dLo, 1) + "&ndash;" + fmt(dHi, 1)
+            + (otherDays
+                ? " · " + otherDays + " day" + (otherDays === 1 ? "" : "s")
+                  + " measured differently, not drawn"
+                : ""))
       + "</small></h3>"
       + "<svg viewBox='0 0 " + W + " " + H + "' preserveAspectRatio='none'>"
       + "<g class='bars'>" + bars + "</g>"

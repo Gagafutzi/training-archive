@@ -118,7 +118,20 @@ if (!sylFiles.length || !rnbFiles.length) {
     assert.strictEqual(out.source, "syllogimous", out.error || "wrong source");
     assert.ok(out.records.length > 100, `only ${out.records.length} records`);
     assert.ok(out.records.every(r => r.at > 0 && r.day.length === 10));
-    assert.ok(out.records.every(r => r.unit === "syllogimous-premises"));
+    /*
+     * Two units, and only these two. Items answered before the app priced them
+     * carry a premise count; everything answered since carries the level the
+     * app itself computed. A real export now holds both, which is what a
+     * straddling window looks like — and the one thing that must never appear
+     * is a third name nobody accounted for.
+     */
+    const units = new Set(out.records.map(r => r.unit));
+    for (const u of units) {
+      assert.ok(u === "syllogimous-premises" || u === "syllogimous-level",
+        `unexpected difficulty unit ${u}`);
+    }
+    assert.ok(out.records.every(r => r.difficulty == null || isFinite(r.difficulty)),
+      "a record carried a difficulty that is not a number");
     // The clamp: no item may claim more than five minutes of attention.
     assert.ok(out.records.every(r => r.seconds <= 300), "an item claimed over five minutes");
   });
