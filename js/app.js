@@ -98,13 +98,17 @@ function importNeighbours() {
     if (syl.SYL_HISTORY) { importText(JSON.stringify(syl), "syllogimous (this browser)"); found++; }
   } catch (e) { /* storage off */ }
 
-  /* The two that keep everything under a single key and export nothing at all,
-     so this button is the only route they have that does not involve reading
-     the browser's own files off disk. */
+  /* Sources that keep everything under a single localStorage key. The first two
+     export nothing at all, so this button is the only route they have that does
+     not involve reading the browser's own files off disk. Synth does have its
+     own export and does not need this — it is here because it costs one line
+     and a trainer whose whole record sits in localStorage is exactly the case
+     this archive exists for. */
   try {
     var singles = [
       { key: "mp_prog", label: "cct" },
       { key: "attentional_shield_v2", label: "ewmt" },
+      { key: "synth5_en", label: "synth" },
     ];
     for (var s = 0; s < singles.length; s++) {
       var val = localStorage.getItem(singles[s].key);

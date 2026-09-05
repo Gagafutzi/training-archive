@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { mergeRecords, hashRow, makeRecord } = require("../js/record.js");
-const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrecision, readRotation, readPrepared, readArchiveExport } = require("../js/adapters.js");
+const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrecision, readRotation, readSynth, readPrepared, readArchiveExport } = require("../js/adapters.js");
 const { execFileSync } = require("child_process");
 const A = require("../js/archive.js");
 
@@ -925,6 +925,106 @@ test("rotation: the adapter claims only its own file", () => {
   assert.strictEqual(readRotation({ "spatial-rotation.progress.v1": "{}" }), null);
   assert.strictEqual(readPrecision(rotDump([rotSession()])), null);
   assert.strictEqual(readFile(JSON.stringify(rotDump([rotSession()]))).source, "rotation");
+});
+
+/* ------------------------------------------------------------------ *
+ * Synth                                                               *
+ * ------------------------------------------------------------------ */
+
+const synthSession = (over = {}) => Object.assign({
+  d: "2026-09-05", m: "game-symbol-to-char", n: 20, c: 17, rt: 1176,
+  xp: 100, t: Date.parse("2026-09-05T09:00:00Z"), secs: 300, spm: 50, unit: 1200,
+}, over);
+
+const synthExport = (sessions, store = {}) => ({
+  app: "synth", version: "2.5", exported: "2026-09-05T10:00:00.000Z",
+  data: Object.assign({ sessions, xp: 1200, dayStreak: 4, symbolStats: {} }, store),
+  colors: {},
+});
+
+test("synth: a session carries its rate, in its own unit", () => {
+  const out = readSynth(synthExport([synthSession()]));
+  assert.strictEqual(out.source, "synth");
+  assert.strictEqual(out.records.length, 1);
+  const r = out.records[0];
+  assert.strictEqual(r.unit, "synth-symbols-per-min");
+  assert.strictEqual(r.difficulty, 50);
+  assert.strictEqual(r.kind, "block");
+  assert.strictEqual(r.seconds, 300);
+  assert.strictEqual(r.label, "symbol-to-char", "the mode should survive as the label");
+  assert.ok(Math.abs(r.correct - 17 / 20) < 1e-9);
+  assert.strictEqual(out.minutes["2026-09-05"], 5);
+});
+
+test("synth: difficulty rises as the window shrinks", () => {
+  /* The staircase pins accuracy and moves speed, so the archive's line has to
+     be the rate. Two sessions with identical accuracy must not look identical. */
+  const slow = readSynth(synthExport([synthSession({ spm: 30, unit: 2000 })])).records[0];
+  const fast = readSynth(synthExport([synthSession({
+    t: Date.parse("2026-09-06T09:00:00Z"), spm: 75, unit: 800,
+  })])).records[0];
+  assert.strictEqual(slow.correct, fast.correct, "accuracy is held flat by design");
+  assert.ok(fast.difficulty > slow.difficulty, "the faster session must read as harder");
+});
+
+test("synth: a session too short to score has no accuracy", () => {
+  const out = readSynth(synthExport([synthSession({ n: 4, c: 4 })]));
+  assert.strictEqual(out.records[0].correct, null);
+  assert.strictEqual(out.records[0].raw.rawAccuracy, 1, "the raw reading is still kept");
+});
+
+test("synth: a row with only a day lands on that day, and says the time was inferred", () => {
+  const out = readSynth(synthExport([synthSession({ t: undefined, secs: 0 })]));
+  const r = out.records[0];
+  assert.strictEqual(r.day, "2026-09-05", "noon UTC must not slide the date");
+  assert.strictEqual(r.raw.inferredTime, true);
+  assert.strictEqual(r.raw.inferredSeconds, true, "seconds off mean RT must be flagged");
+});
+
+test("synth: a storage snapshot reads the same as an export", () => {
+  const viaExport = readSynth(synthExport([synthSession()]));
+  const viaStorage = readSynth({ synth5_en: JSON.stringify(synthExport([synthSession()]).data) });
+  assert.deepStrictEqual(viaStorage.records, viaExport.records,
+    "'Read this browser' and the app's own export must agree");
+});
+
+test("synth: re-importing an export changes nothing", () => {
+  const rows = readSynth(synthExport([synthSession(), synthSession({
+    t: Date.parse("2026-09-05T10:00:00Z"), m: "game-search",
+  })])).records;
+  const first = mergeRecords([], rows);
+  const again = mergeRecords(first.records, rows);
+  assert.strictEqual(first.total, 2);
+  assert.strictEqual(again.total, 2, "a second import of the same file grew the archive");
+  assert.strictEqual(again.added, 0);
+});
+
+test("synth: the automaticity measures are withheld until they are earned", () => {
+  const few = readSynth(synthExport([synthSession()], {
+    stroop: { congruent: [700, 720], incongruent: [780, 800] },
+    search: { 6: [800, 810, 820], 12: [900, 910, 920] },
+  }));
+  assert.strictEqual(few.state.stroopInterferenceMs, undefined,
+    "four Stroop trials must not produce an interference number");
+  assert.strictEqual(few.state.searchSlopeMsPerItem, undefined,
+    "six search trials must not produce a slope");
+
+  const many = readSynth(synthExport([synthSession()], {
+    stroop: { congruent: Array(20).fill(700), incongruent: Array(20).fill(760) },
+    search: { 6: Array(15).fill(800), 12: Array(15).fill(920), 20: Array(15).fill(1040) },
+  }));
+  assert.strictEqual(many.state.stroopInterferenceMs, 60);
+  /* (6,800) (12,920) (20,1040) -> least squares gives 1680/98.67 = 17.027 */
+  assert.ok(Math.abs(many.state.searchSlopeMsPerItem - 17.027) < 0.01,
+    "slope should be the least-squares fit over set size");
+});
+
+test("synth: the adapter claims only its own file", () => {
+  assert.strictEqual(readSynth({ app: "synth" }), null, "no sessions is not a reading");
+  assert.strictEqual(readSynth({ app: "other", data: { sessions: [] } }), null);
+  assert.strictEqual(readSynth(synthExport([])), null);
+  assert.strictEqual(readSynth({ "spatial-rotation.progress.v1": "{}" }), null);
+  assert.strictEqual(readFile(JSON.stringify(synthExport([synthSession()]))).source, "synth");
 });
 
 for (const [name, fn] of cases) {

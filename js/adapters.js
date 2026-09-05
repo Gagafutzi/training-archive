@@ -836,6 +836,178 @@ function readArchiveExport(file) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Synth — the grapheme-colour synesthesia trainer                     *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Arrives in two shapes, because the app can hand over either one: its own
+ * export (`{app:"synth", data:{...}}`, written by Tools -> Data -> Export) or a
+ * storage snapshot holding `synth5_en`, which is what "Read this browser"
+ * produces. Both carry the same object, so both are unwrapped to it here.
+ *
+ * Difficulty is **symbols per minute**, and the direction matters. Synth runs a
+ * weighted staircase that holds accuracy at a target — 85% by default — and
+ * moves the time window until it gets there. So accuracy is flat by
+ * construction and says nothing; what improves is how fast the window can get
+ * while accuracy stays pinned. The app stores that window as milliseconds per
+ * distinct symbol, which *falls* as you improve; inverting it to a rate gives a
+ * line that rises with skill, like every other difficulty series here.
+ *
+ * Its modes stay under one source and are told apart by the label, as the
+ * rotation trainer's are: same app, same session shape, same staircase.
+ */
+function readSynth(data) {
+  if (!data || typeof data !== "object") return null;
+
+  var store = null;
+  if (data.app === "synth" && data.data && typeof data.data === "object") {
+    store = data.data;
+  } else if (typeof data["synth5_en"] === "string") {
+    try { store = JSON.parse(data["synth5_en"]); } catch (e) { return null; }
+  }
+  if (!store || !Array.isArray(store.sessions)) return null;
+
+  var origin = typeof data.__origin === "string" ? data.__origin : null;
+  var records = [];
+  var minutes = {};
+
+  /* Below this a session's accuracy is a coin-flip readout, the same judgement
+     eWMT, Precision and rotation already make about their own short blocks. */
+  var MIN_ANSWERS = 8;
+
+  for (var i = 0; i < store.sessions.length; i++) {
+    var s = store.sessions[i];
+    if (!s || typeof s !== "object") continue;
+
+    var answers = Number(s.n) || 0;
+    if (!answers) continue;
+
+    /* Sessions written before the app recorded a clock have only a day. Noon
+       UTC keeps the derived day equal to the one the app itself wrote, instead
+       of letting a midnight timestamp slide either side of the date line. */
+    var at = Number(s.t);
+    var inferredTime = false;
+    if (!at || isNaN(at)) {
+      if (typeof s.d !== "string") continue;
+      at = Date.parse(s.d + "T12:00:00Z");
+      if (isNaN(at)) continue;
+      inferredTime = true;
+    }
+
+    /* Likewise for duration. Answers x mean response time is time demonstrably
+       spent answering — a floor, not the session's real length, and flagged as
+       such so nothing later reads it as measured. */
+    var seconds = Number(s.secs) || 0;
+    var inferredSeconds = false;
+    if (!seconds && s.rt) {
+      seconds = Math.min(answers * Number(s.rt) / 1000, answers * MAX_ITEM_SECONDS);
+      inferredSeconds = true;
+    }
+
+    var correct = answers >= MIN_ANSWERS ? Number(s.c) / answers : null;
+
+    records.push(_makeRecord({
+      source: "synth",
+      id: _hashRow(at + "|" + (s.m || "?") + "|" + answers),
+      at: at,
+      kind: "block",
+      seconds: seconds,
+      correct: correct,
+      difficulty: s.spm == null ? null : Number(s.spm),
+      unit: "synth-symbols-per-min",
+      label: String(s.m || "?").replace(/^game-/, ""),
+      raw: {
+        origin: origin,
+        mode: s.m || null,
+        answers: answers,
+        correctCount: s.c == null ? null : Number(s.c),
+        /* Kept so a null accuracy above can be told from a session the app
+           never scored. */
+        rawAccuracy: answers ? Number(s.c) / answers : null,
+        meanRtMs: s.rt == null ? null : Number(s.rt),
+        /* The staircase's own state: ms of window per distinct symbol. */
+        msPerSymbol: s.unit == null ? null : Number(s.unit),
+        xp: s.xp == null ? null : Number(s.xp),
+        inferredTime: inferredTime,
+        inferredSeconds: inferredSeconds,
+      },
+    }));
+
+    var day = new Date(at).toISOString().slice(0, 10);
+    minutes[day] = (minutes[day] || 0) + seconds / 60;
+  }
+
+  if (!records.length) return null;
+
+  /* What no single session states: where the symbols stand, and the two
+     automaticity measures the trainer takes on itself. Both are held back until
+     they have the trials to mean anything — a Stroop difference off six trials
+     is noise wearing a number's clothes. */
+  var state = { symbols: {}, xp: Number(store.xp) || 0, dayStreak: Number(store.dayStreak) || 0 };
+
+  var stats = store.symbolStats || {};
+  for (var k in stats) {
+    if (!Object.prototype.hasOwnProperty.call(stats, k)) continue;
+    var t = stats[k] || {};
+    var seen = (Number(t.c) || 0) + (Number(t.w) || 0);
+    if (!seen) continue;
+    state.symbols[k] = {
+      seen: seen,
+      accuracy: (Number(t.c) || 0) / seen,
+      meanRtMs: t.rtN ? (Number(t.rtSum) || 0) / Number(t.rtN) : null,
+    };
+  }
+
+  var st = store.stroop || {};
+  var cg = Array.isArray(st.congruent) ? st.congruent : [];
+  var ic = Array.isArray(st.incongruent) ? st.incongruent : [];
+  if (cg.length + ic.length >= 30 && cg.length && ic.length) {
+    state.stroopInterferenceMs = _median(ic) - _median(cg);
+    state.stroopTrials = cg.length + ic.length;
+  }
+
+  /* Search slope: ms added per extra item in the field. Near zero means the
+     target is found in parallel rather than scanned for. Least squares over the
+     set sizes that have trials, and only with at least two of them — one point
+     defines no line. */
+  var search = store.search || {};
+  var pts = [];
+  var trials = 0;
+  for (var size in search) {
+    if (!Object.prototype.hasOwnProperty.call(search, size)) continue;
+    var arr = search[size];
+    if (!Array.isArray(arr) || arr.length < 3) continue;
+    pts.push({ n: Number(size), rt: _median(arr) });
+    trials += arr.length;
+  }
+  if (pts.length >= 2 && trials >= 30) {
+    var mx = 0, my = 0;
+    for (var a = 0; a < pts.length; a++) { mx += pts[a].n; my += pts[a].rt; }
+    mx /= pts.length; my /= pts.length;
+    var num = 0, den = 0;
+    for (var b = 0; b < pts.length; b++) {
+      num += (pts[b].n - mx) * (pts[b].rt - my);
+      den += (pts[b].n - mx) * (pts[b].n - mx);
+    }
+    if (den) {
+      state.searchSlopeMsPerItem = num / den;
+      state.searchTrials = trials;
+    }
+  }
+
+  if (!Object.keys(state.symbols).length) delete state.symbols;
+
+  return { source: "synth", records: records, minutes: minutes, state: state };
+}
+
+/** Median of a numeric array. Used for both of Synth's reaction-time measures. */
+function _median(arr) {
+  var a = arr.slice().sort(function (x, y) { return x - y; });
+  var m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+/* ------------------------------------------------------------------ *
  * Dispatch                                                            *
  * ------------------------------------------------------------------ */
 
@@ -850,6 +1022,7 @@ var ADAPTERS = [
   { name: "ewmt", read: readEwmt },
   { name: "precision", read: readPrecision },
   { name: "rotation", read: readRotation },
+  { name: "synth", read: readSynth },
 ];
 
 /**
@@ -894,6 +1067,7 @@ if (typeof module !== "undefined") {
     readEwmt: readEwmt,
     readPrecision: readPrecision,
     readRotation: readRotation,
+    readSynth: readSynth,
     readPrepared: readPrepared,
     readArchiveExport: readArchiveExport,
     MAX_ITEM_SECONDS: MAX_ITEM_SECONDS,

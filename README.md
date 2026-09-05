@@ -37,7 +37,7 @@ is idempotent: running it twice costs nothing and changes nothing.
   file, not its name, because a third-party export always arrives called
   `export (3).json`.
 - **Drop the archive itself** to restore it after a reset.
-- **Read this browser** pulls straight from Syllogimous and RNB when the page is
+- **Read this browser** pulls straight from Syllogimous, RNB, CCT, eWMT and Synth when the page is
   served from the same origin they are — on GitHub Pages every repo of one
   account shares an origin, so on the deployed site no export is needed. Locally
   they are separate origins and it finds nothing.
@@ -236,6 +236,33 @@ would be the first step towards comparing it with another app's.
 One caveat the script prints for itself: if your studying happens on a phone or
 through AnkiWeb, the desktop profile is not where it lands, and the collection it
 finds may be months stale.
+
+## Synth
+
+The grapheme-colour synesthesia trainer. Read from its own export (Tools → Data →
+Export) or straight from `synth5_en` in localStorage; both carry the same object.
+
+Its difficulty is **symbols per minute**, and the inversion is the point. Synth
+runs a weighted staircase that pins accuracy at a target — 85% by default — and
+moves the time window until it gets there. Accuracy is therefore flat by
+construction and carries no signal about improvement; what improves is how fast
+the window can get while accuracy stays pinned. The app stores that window as
+milliseconds per *distinct* symbol, which falls as you improve, so the adapter
+inverts it to a rate that rises. Its modes stay under one source and are told
+apart by the label, as the rotation trainer's are.
+
+It also takes two automaticity measures on itself, and both are withheld until
+they have the trials to mean anything:
+
+- `stroopInterferenceMs` — median incongruent minus median congruent reaction
+  time, held back below 30 trials.
+- `searchSlopeMsPerItem` — least-squares slope of reaction time against set size
+  in the pop-out search. Near zero means the target is found in parallel rather
+  than scanned for. Needs two set sizes and 30 trials.
+
+Sessions written before the app recorded a clock have only a day; those land at
+noon UTC with `raw.inferredTime` set, and a duration derived from mean response
+time is flagged `raw.inferredSeconds` so nothing later reads it as measured.
 
 ## Adding a source
 
