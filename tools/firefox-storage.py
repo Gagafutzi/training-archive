@@ -315,6 +315,24 @@ def precision_from(store):
     return {"nback-performance": raw}
 
 
+def rotation_from(store):
+    """The molecule and stereochemistry trainer's ladder and session list.
+
+    It kept nothing at all until it was given a progression system; this key is
+    what that added, and it is the only copy — the app has no export.
+    """
+    raw = store.get("spatial-rotation.progress.v1")
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not data.get("history"):
+        return None
+    return {"spatial-rotation.progress.v1": raw}
+
+
 def rnb_from(store):
     """One payload per profile: RNB keeps a whole record under each."""
     out = []
@@ -433,6 +451,16 @@ def main():
                     json.dump(prec, fh)
                 print("  precision    %-52s %5d sessions"
                       % (label, len(json.loads(prec["nback-performance"]))))
+                written.append(path)
+
+            rot = rotation_from(store)
+            if rot:
+                rot["__origin"] = label
+                path = os.path.join(args.outdir, "rotation-%s.json" % safe)
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(rot, fh)
+                hist = json.loads(rot["spatial-rotation.progress.v1"])["history"]
+                print("  rotation     %-52s %5d sessions" % (label, len(hist)))
                 written.append(path)
 
             for name, data in rnb_from(store):

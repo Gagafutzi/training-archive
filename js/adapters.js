@@ -661,6 +661,104 @@ function readPrecision(data) {
 }
 
 /* ------------------------------------------------------------------ *
+ * 3D Spatial Rotation — the molecule and stereochemistry trainer      *
+ * ------------------------------------------------------------------ */
+
+/**
+ * A storage snapshot again, and the only source here that had to be taught to
+ * keep a record at all: it computed score, accuracy and time for its end screen
+ * and then discarded them, so before the trainer gained a progression system
+ * there was nothing on disk for any adapter to read.
+ *
+ * Three modes under one source — `blocks`, `molecules` and `rs` — kept together
+ * because they share the app, the session shape and the level scale, and told
+ * apart by the label. Each carries its own ladder inside the app.
+ */
+function readRotation(data) {
+  var raw = data && typeof data === "object"
+    ? data["spatial-rotation.progress.v1"] : null;
+  if (typeof raw !== "string") return null;
+
+  var store;
+  try { store = JSON.parse(raw); } catch (e) { return null; }
+  if (!store || !Array.isArray(store.history)) return null;
+
+  var origin = typeof data.__origin === "string" ? data.__origin : null;
+  var records = [];
+  var minutes = {};
+
+  /* The trainer's own threshold for a session meaning anything. Below it the
+     app refuses to move its ladder, and an accuracy read off three answers is
+     no more trustworthy here than it was in eWMT or Precision. */
+  var MIN_ATTEMPTS = 10;
+
+  for (var i = 0; i < store.history.length; i++) {
+    var h = store.history[i];
+    if (!h || !h.ts) continue;
+
+    var seconds = Math.max(0, Number(h.seconds) || 0);
+    var attempts = Number(h.attempts) || 0;
+    var correct = (h.accuracy != null && attempts >= MIN_ATTEMPTS)
+      ? Number(h.accuracy) : null;
+
+    records.push(_makeRecord({
+      source: "rotation",
+      id: _hashRow(h.ts + "|" + h.mode + "|" + h.attempts),
+      at: h.ts,
+      kind: "block",
+      seconds: seconds,
+      correct: correct,
+      /* The highest level actually reached, which is the session's own
+         achievement — the level it happened to end on can be a dip. */
+      difficulty: h.peakLevel == null ? null : Number(h.peakLevel),
+      unit: "rotation-level",
+      label: String(h.mode || "?"),
+      raw: {
+        origin: origin,
+        mode: h.mode || null,
+        score: h.score == null ? null : Number(h.score),
+        attempts: attempts,
+        /* Kept so a null accuracy above can be told from one the app never
+           had a number for. */
+        rawAccuracy: h.accuracy == null ? null : Number(h.accuracy),
+        peakLevel: h.peakLevel == null ? null : Number(h.peakLevel),
+        endLevel: h.endLevel == null ? null : Number(h.endLevel),
+        /* The established level AFTER this session — the ladder's position, as
+           distinct from what was reached during the session. */
+        ladderLevel: h.level == null ? null : Number(h.level),
+      },
+    }));
+
+    var day = new Date(h.ts).toISOString().slice(0, 10);
+    minutes[day] = (minutes[day] || 0) + seconds / 60;
+  }
+
+  if (!records.length) return null;
+
+  /* Where each mode's ladder stands, which no single session states. */
+  var state = {};
+  if (store.modes && typeof store.modes === "object") {
+    for (var m in store.modes) {
+      if (!Object.prototype.hasOwnProperty.call(store.modes, m)) continue;
+      var e = store.modes[m] || {};
+      state[m] = {
+        level: e.level == null ? null : Number(e.level),
+        best: e.best == null ? null : Number(e.best),
+        sessions: e.sessions == null ? null : Number(e.sessions),
+        seconds: e.seconds == null ? null : Number(e.seconds),
+      };
+    }
+  }
+
+  return {
+    source: "rotation",
+    records: records,
+    minutes: minutes,
+    state: Object.keys(state).length ? state : null,
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * The archive's own export                                            *
  * ------------------------------------------------------------------ */
 
@@ -751,6 +849,7 @@ var ADAPTERS = [
   { name: "cct", read: readCct },
   { name: "ewmt", read: readEwmt },
   { name: "precision", read: readPrecision },
+  { name: "rotation", read: readRotation },
 ];
 
 /**
@@ -794,6 +893,7 @@ if (typeof module !== "undefined") {
     readCct: readCct,
     readEwmt: readEwmt,
     readPrecision: readPrecision,
+    readRotation: readRotation,
     readPrepared: readPrepared,
     readArchiveExport: readArchiveExport,
     MAX_ITEM_SECONDS: MAX_ITEM_SECONDS,

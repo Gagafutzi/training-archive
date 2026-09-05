@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { mergeRecords, hashRow, makeRecord } = require("../js/record.js");
-const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrecision, readPrepared, readArchiveExport } = require("../js/adapters.js");
+const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrecision, readRotation, readPrepared, readArchiveExport } = require("../js/adapters.js");
 const { execFileSync } = require("child_process");
 const A = require("../js/archive.js");
 
@@ -864,6 +864,67 @@ test("Precision: the adapter claims only its own file", () => {
   assert.strictEqual(readPrecision({ "nback-performance": "[]" }), null);
   assert.strictEqual(readPrecision({ "nback-performance": "not json" }), null);
   assert.strictEqual(readCct(precDump([{ date: "x" }])), null);
+});
+
+/* ------------------------------------------------------------------ *
+ * 3D Spatial Rotation                                                 *
+ * ------------------------------------------------------------------ */
+
+const rotDump = (history, modes) => ({
+  "spatial-rotation.progress.v1": JSON.stringify({
+    modes: modes || { blocks: { level: 2, best: 5, sessions: 9, seconds: 900 } },
+    history,
+  }),
+});
+
+const rotSession = extra => Object.assign({
+  ts: 1757000000000, mode: "molecules", seconds: 300, score: 18, attempts: 24,
+  accuracy: 0.75, peakLevel: 4, endLevel: 3, level: 2,
+}, extra || {});
+
+test("rotation: a session records the level it reached, in its own unit", () => {
+  const out = readRotation(rotDump([rotSession()]));
+  assert.strictEqual(out.source, "rotation");
+  const r = out.records[0];
+  assert.strictEqual(r.correct, 0.75);
+  assert.strictEqual(r.difficulty, 4, "difficulty is the level reached, not the ladder's");
+  assert.strictEqual(r.unit, "rotation-level");
+  assert.strictEqual(r.seconds, 300);
+  assert.strictEqual(r.label, "molecules", "the mode has to survive; three share this source");
+  assert.strictEqual(out.minutes[r.day], 5);
+  assert.strictEqual(r.raw.ladderLevel, 2, "where the ladder stands is not what was reached");
+});
+
+test("rotation: a session too short to count has no accuracy", () => {
+  /* The trainer refuses to move its ladder below ten attempts; an accuracy read
+     off four answers is no more trustworthy than eWMT's or Precision's was. */
+  const out = readRotation(rotDump([
+    rotSession({ attempts: 4, score: 4, accuracy: 1, seconds: 9 }),
+  ]));
+  assert.strictEqual(out.records[0].correct, null,
+    "four answers at 100% was recorded as a perfect session");
+  assert.strictEqual(out.records[0].raw.rawAccuracy, 1,
+    "the app's own number should still be visible in raw");
+  assert.strictEqual(out.records[0].seconds, 9, "the time was still spent");
+});
+
+test("rotation: the three modes stay apart, and each ladder is carried", () => {
+  const out = readRotation(rotDump(
+    [rotSession({ mode: "blocks" }), rotSession({ ts: 1757000900000, mode: "rs" })],
+    { blocks: { level: 3, best: 6, sessions: 4, seconds: 600 },
+      rs: { level: 1, best: 2, sessions: 2, seconds: 300 } }
+  ));
+  assert.deepStrictEqual(out.records.map(r => r.label).sort(), ["blocks", "rs"]);
+  assert.strictEqual(out.state.blocks.level, 3);
+  assert.strictEqual(out.state.rs.best, 2);
+});
+
+test("rotation: the adapter claims only its own file", () => {
+  assert.strictEqual(readRotation({ mp_prog: "{}" }), null);
+  assert.strictEqual(readRotation({ "nback-performance": "[]" }), null);
+  assert.strictEqual(readRotation({ "spatial-rotation.progress.v1": "{}" }), null);
+  assert.strictEqual(readPrecision(rotDump([rotSession()])), null);
+  assert.strictEqual(readFile(JSON.stringify(rotDump([rotSession()]))).source, "rotation");
 });
 
 for (const [name, fn] of cases) {
