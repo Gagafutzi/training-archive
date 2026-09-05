@@ -579,6 +579,88 @@ function readEwmt(data) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Precision N-back                                                    *
+ * ------------------------------------------------------------------ */
+
+/**
+ * A storage snapshot again — it keeps its history under `nback-performance`
+ * and has no export.
+ *
+ * The odd one out here in what it adapts. Every other n-back moves n; this one
+ * holds n and moves the *threshold* — how far apart two tones, two hues or two
+ * shapes have to be before you can tell them apart, tightened per modality
+ * after each session. So n alone would miss most of what changed, and the
+ * thresholds are carried in `raw` beside it.
+ *
+ * Difficulty stays n, because it is the one number here that means the same
+ * thing it means everywhere else in the archive. A tightening threshold is a
+ * real gain and is not on that axis; reading the two together is a job for
+ * something that knows this source, which is what `raw` is for.
+ */
+function readPrecision(data) {
+  var raw = data && typeof data === "object" ? data["nback-performance"] : null;
+  if (typeof raw !== "string") return null;
+
+  var history;
+  try { history = JSON.parse(raw); } catch (e) { return null; }
+  if (!Array.isArray(history)) return null;
+
+  var origin = typeof data.__origin === "string" ? data.__origin : null;
+  var records = [];
+  var minutes = {};
+
+  for (var i = 0; i < history.length; i++) {
+    var h = history[i];
+    if (!h || !h.date) continue;
+    var at = Date.parse(h.date);
+    if (isNaN(at)) continue;
+
+    var cfg = h.settings || {};
+    var seconds = Math.max(0, Number(h.duration) || 0) / 1000;
+
+    /* Its own accuracy is hits / (matches + false alarms), already a fraction.
+       A session that presented no match at all is not a perfect one: the app
+       returns 1 for that case, so taken at face value an abandoned session
+       reads as flawless. The same trap eWMT set, in the other direction. */
+    var matches = Number(h.totalMatches);
+    var correct = (h.accuracy != null && matches > 0) ? Number(h.accuracy) : null;
+
+    records.push(_makeRecord({
+      source: "precision",
+      id: _hashRow(h.date + "|" + cfg.nLevel + "|" + h.duration),
+      at: at,
+      kind: "block",
+      seconds: seconds,
+      correct: correct,
+      difficulty: cfg.nLevel == null ? null : Number(cfg.nLevel),
+      unit: "precision-n",
+      label: "n" + (cfg.nLevel == null ? "?" : cfg.nLevel),
+      raw: {
+        origin: origin,
+        /* The thresholds are the thing this trainer actually moves, and they are
+           per modality: cents for the tone, degrees of hue, percent of vertex
+           displacement for the shape. Lower is harder in all three. */
+        audioThreshold: cfg.audioThreshold == null ? null : Number(cfg.audioThreshold),
+        colorThreshold: cfg.colorThreshold == null ? null : Number(cfg.colorThreshold),
+        shapeThreshold: cfg.shapeThreshold == null ? null : Number(cfg.shapeThreshold),
+        grid: cfg.gridRows != null ? [cfg.gridRows, cfg.gridCols] : null,
+        score: h.score || null,
+        totalMatches: h.totalMatches == null ? null : Number(h.totalMatches),
+        totalMatchesByModality: h.totalMatchesByModality || null,
+        correctRejections: h.correctRejections == null ? null : Number(h.correctRejections),
+        totalNonMatches: h.totalNonMatches == null ? null : Number(h.totalNonMatches),
+      },
+    }));
+
+    var day = new Date(at).toISOString().slice(0, 10);
+    minutes[day] = (minutes[day] || 0) + seconds / 60;
+  }
+
+  if (!records.length) return null;
+  return { source: "precision", records: records, minutes: minutes, state: null };
+}
+
+/* ------------------------------------------------------------------ *
  * The archive's own export                                            *
  * ------------------------------------------------------------------ */
 
@@ -668,6 +750,7 @@ var ADAPTERS = [
   { name: "rnb", read: readRnb },
   { name: "cct", read: readCct },
   { name: "ewmt", read: readEwmt },
+  { name: "precision", read: readPrecision },
 ];
 
 /**
@@ -710,6 +793,7 @@ if (typeof module !== "undefined") {
     readRnb: readRnb,
     readCct: readCct,
     readEwmt: readEwmt,
+    readPrecision: readPrecision,
     readPrepared: readPrepared,
     readArchiveExport: readArchiveExport,
     MAX_ITEM_SECONDS: MAX_ITEM_SECONDS,

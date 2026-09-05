@@ -301,6 +301,20 @@ def ewmt_from(store):
     return {"attentional_shield_v2": raw}
 
 
+def precision_from(store):
+    """Its history under one key, and no export to ask for instead."""
+    raw = store.get("nback-performance")
+    if not raw:
+        return None
+    try:
+        hist = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(hist, list) or not hist:
+        return None
+    return {"nback-performance": raw}
+
+
 def rnb_from(store):
     """One payload per profile: RNB keeps a whole record under each."""
     out = []
@@ -409,6 +423,16 @@ def main():
                     json.dump(ewmt, fh)
                 n = len(json.loads(ewmt["attentional_shield_v2"])["sessions"])
                 print("  ewmt         %-52s %5d sessions" % (label, n))
+                written.append(path)
+
+            prec = precision_from(store)
+            if prec:
+                prec["__origin"] = label
+                path = os.path.join(args.outdir, "precision-%s.json" % safe)
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(prec, fh)
+                print("  precision    %-52s %5d sessions"
+                      % (label, len(json.loads(prec["nback-performance"]))))
                 written.append(path)
 
             for name, data in rnb_from(store):

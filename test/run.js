@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { mergeRecords, hashRow, makeRecord } = require("../js/record.js");
-const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrepared, readArchiveExport } = require("../js/adapters.js");
+const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrecision, readPrepared, readArchiveExport } = require("../js/adapters.js");
 const { execFileSync } = require("child_process");
 const A = require("../js/archive.js");
 
@@ -816,6 +816,54 @@ test("a source summary reports the unit most of it is measured in", () => {
   assert.strictEqual(s.unit, "syllogimous-level",
     "the summary is reporting the unit of its oldest record");
   assert.strictEqual(s.records, 6);
+});
+
+/* ------------------------------------------------------------------ *
+ * Precision N-back                                                    *
+ * ------------------------------------------------------------------ */
+
+const precDump = sessions => ({ "nback-performance": JSON.stringify(sessions) });
+
+test("Precision: a session records n, and keeps the thresholds beside it", () => {
+  const out = readPrecision(precDump([{
+    date: "2026-09-05T10:00:00.000Z", duration: 300000, accuracy: 0.82,
+    totalMatches: 20, correctRejections: 30, totalNonMatches: 40,
+    settings: { nLevel: 3, audioThreshold: 40, colorThreshold: 12,
+                shapeThreshold: 8, gridRows: 3, gridCols: 3 },
+    score: { hits: { spatial: 5, audio: 4, color: 5, shape: 4 }, misses: 2,
+             audioFalseAlarms: 1, spatialFalseAlarms: 0,
+             colorFalseAlarms: 1, shapeFalseAlarms: 0 },
+  }]));
+  const r = out.records[0];
+  assert.strictEqual(out.source, "precision");
+  assert.strictEqual(r.difficulty, 3);
+  assert.strictEqual(r.unit, "precision-n");
+  assert.strictEqual(r.correct, 0.82);
+  assert.strictEqual(r.seconds, 300);
+  assert.strictEqual(out.minutes[r.day], 5);
+  /* The thresholds are what this trainer actually moves; n alone would miss it. */
+  assert.strictEqual(r.raw.audioThreshold, 40);
+  assert.strictEqual(r.raw.shapeThreshold, 8);
+});
+
+test("Precision: a session that presented no match has no accuracy", () => {
+  /* The app returns accuracy 1 when nothing was asked, so an abandoned session
+     reads as flawless unless that is caught here. */
+  const out = readPrecision(precDump([{
+    date: "2026-09-05T11:00:00.000Z", duration: 4000, accuracy: 1,
+    totalMatches: 0, settings: { nLevel: 2 },
+  }]));
+  assert.strictEqual(out.records[0].correct, null,
+    "an empty session was recorded as a perfect one");
+  assert.strictEqual(out.records[0].seconds, 4, "the time was still spent");
+});
+
+test("Precision: the adapter claims only its own file", () => {
+  assert.strictEqual(readPrecision({ mp_prog: "{}" }), null);
+  assert.strictEqual(readPrecision({ SYL_HISTORY: "[]" }), null);
+  assert.strictEqual(readPrecision({ "nback-performance": "[]" }), null);
+  assert.strictEqual(readPrecision({ "nback-performance": "not json" }), null);
+  assert.strictEqual(readCct(precDump([{ date: "x" }])), null);
 });
 
 for (const [name, fn] of cases) {
