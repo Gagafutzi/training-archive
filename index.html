@@ -25,6 +25,10 @@
     <button id="neighbours" class="btn" type="button">Read this browser</button>
     <button id="save" class="btn primary" type="button" disabled>Download archive</button>
   </div>
+  <div class="row">
+    <button id="undo" class="btn quiet" type="button" hidden>Undo last import</button>
+  </div>
+  <p id="savestate" class="savestate"></p>
 </section>
 
 <section>
@@ -78,6 +82,8 @@
   <div class="row">
     <label>Source <select id="filterSource"></select></label>
     <label>From <input id="filterFrom" type="date"></label>
+    <label>To <input id="filterTo" type="date"></label>
+    <button id="more" class="btn" type="button" hidden></button>
     <button id="csv" class="btn" type="button">Download CSV</button>
   </div>
   <table id="days"></table>

@@ -21,6 +21,99 @@ var WEEKS_NEEDED = 20;
 function fmt(n, digits) { return Number(n).toFixed(digits == null ? 0 : digits); }
 
 /* ------------------------------------------------------------------ *
+ * Whether the file is behind the page                                 *
+ * ------------------------------------------------------------------ *
+ *
+ * The header promises that the file is the archive and this page only
+ * maintains it. That promise is only kept if the page says when the two have
+ * drifted apart — an import that never reached a download is a record that
+ * exists in exactly one place, and that place is the one the header warns you
+ * about. So the count survives a reload, and leaving with imports outstanding
+ * asks first.
+ */
+
+var UNSAVED_KEY = "archive.unsaved.v1";
+var SAVED_AT_KEY = "archive.savedAt.v1";
+var unsavedImports = 0;
+var savedAt = "";
+
+function loadSaveState() {
+  try {
+    unsavedImports = Number(localStorage.getItem(UNSAVED_KEY)) || 0;
+    savedAt = localStorage.getItem(SAVED_AT_KEY) || "";
+  } catch (e) { /* storage off; the warning simply starts from zero */ }
+}
+
+function storeSaveState() {
+  try {
+    localStorage.setItem(UNSAVED_KEY, String(unsavedImports));
+    if (savedAt) localStorage.setItem(SAVED_AT_KEY, savedAt);
+  } catch (e) { /* storage off */ }
+}
+
+function markUnsaved() { unsavedImports++; storeSaveState(); renderSaveState(); }
+
+function markSaved() {
+  unsavedImports = 0;
+  savedAt = new Date().toISOString();
+  storeSaveState();
+  renderSaveState();
+}
+
+function renderSaveState() {
+  var host = $("savestate");
+  if (!host) return;
+
+  if (!archive.records.length) { host.textContent = ""; host.className = "savestate"; return; }
+
+  if (unsavedImports > 0) {
+    host.className = "savestate warn";
+    host.innerHTML = "<b>" + unsavedImports + "</b> import"
+      + (unsavedImports === 1 ? " is" : "s are") + " not in any file yet"
+      + (savedAt ? " — last download " + savedAt.slice(0, 10) : "")
+      + ". Download the archive to keep " + (unsavedImports === 1 ? "it" : "them") + ".";
+    return;
+  }
+
+  host.className = "savestate";
+  host.textContent = savedAt
+    ? "Downloaded " + savedAt.slice(0, 10) + " — the file is up to date."
+    : "Never downloaded from this browser. Nothing here survives clearing site data.";
+}
+
+/* ------------------------------------------------------------------ *
+ * Undo                                                                *
+ * ------------------------------------------------------------------ *
+ *
+ * One step, held in memory only. Folding is a merge, so a wrong file cannot be
+ * subtracted back out afterwards — the records it added and the ones it
+ * updated are indistinguishable from the rest by then. Keeping the whole
+ * archive from just before is the only honest way to take it back.
+ */
+
+var undoState = null;
+
+function snapshot() {
+  try { undoState = JSON.stringify(archive); } catch (e) { undoState = null; }
+  refreshUndo();
+}
+
+function refreshUndo() {
+  var b = $("undo");
+  if (b) b.hidden = !undoState;
+}
+
+function undoImport() {
+  if (!undoState) return;
+  archive = JSON.parse(undoState);
+  undoState = null;
+  cacheSave(archive);
+  if (unsavedImports > 0) { unsavedImports--; storeSaveState(); }
+  note("last import undone — back to " + archive.records.length + " records");
+  render();
+}
+
+/* ------------------------------------------------------------------ *
  * Importing                                                           *
  * ------------------------------------------------------------------ */
 
@@ -30,6 +123,8 @@ function importText(text, name) {
     note(name + ": " + reading.error, true);
     return;
   }
+
+  snapshot();
 
   /* One of our own exports: a reading per source, folded one at a time so the
      ordinary merge does the work. `writtenOn` comes from the file rather than
@@ -46,6 +141,7 @@ function importText(text, name) {
     note(name + " → archive (" + reading.readings.length + " sources): "
       + total.added + " new, " + total.updated + " updated, "
       + total.days + " new days" + (ok ? "" : " (cache full — keep the archive file)"));
+    markUnsaved();
     render();
     return;
   }
@@ -55,6 +151,7 @@ function importText(text, name) {
   note(name + " → " + reading.source + ": "
     + out.added + " new, " + out.updated + " updated, " + out.days + " new days"
     + (saved ? "" : " (cache full — keep the archive file)"));
+  markUnsaved();
   render();
 }
 
@@ -145,6 +242,8 @@ function render() {
   renderOverlap();
   renderFilters();
   renderDays();
+  renderSaveState();
+  refreshUndo();
   $("save").disabled = archive.records.length === 0;
 }
 
@@ -348,6 +447,32 @@ function renderModes() {
 
 var filterSource = "";
 var filterFrom = "";
+var filterTo = "";
+
+/* How many days the table shows. 0 is all of them. */
+var dayLimit = 60;
+
+/* Filters are a view, not data — but retyping a date after every reload is
+   the kind of small tax that stops you looking. */
+var FILTER_KEY = "archive.filters.v1";
+
+function loadFilters() {
+  try {
+    var f = JSON.parse(localStorage.getItem(FILTER_KEY) || "null") || {};
+    filterSource = f.source || "";
+    filterFrom = f.from || "";
+    filterTo = f.to || "";
+    dayLimit = f.limit == null ? 60 : f.limit;
+  } catch (e) { /* storage off */ }
+}
+
+function storeFilters() {
+  try {
+    localStorage.setItem(FILTER_KEY, JSON.stringify({
+      source: filterSource, from: filterFrom, to: filterTo, limit: dayLimit
+    }));
+  } catch (e) { /* storage off */ }
+}
 
 function renderFilters() {
   var sel = $("filterSource");
@@ -363,7 +488,8 @@ function renderFilters() {
 function downloadCsv() {
   var rows = archive.records.filter(function (r) {
     return (!filterSource || r.source === filterSource)
-      && (!filterFrom || r.day >= filterFrom);
+      && (!filterFrom || r.day >= filterFrom)
+      && (!filterTo || r.day <= filterTo);
   });
   var url = URL.createObjectURL(new Blob(
     [toCsv({ records: rows })], { type: "text/csv" }));
@@ -441,10 +567,19 @@ function renderOverlap() {
 }
 
 function renderDays() {
-  var all = days(archive)
-    .filter(function (d) { return !filterFrom || d >= filterFrom; })
-    .slice(-60).reverse();
+  var matching = days(archive).filter(function (d) {
+    return (!filterFrom || d >= filterFrom) && (!filterTo || d <= filterTo);
+  });
+  var all = (dayLimit ? matching.slice(-dayLimit) : matching.slice()).reverse();
   var host = $("days");
+
+  var more = $("more");
+  if (more) {
+    more.hidden = matching.length <= 60;
+    more.textContent = dayLimit
+      ? "Show all " + matching.length + " days"
+      : "Show the last 60";
+  }
   var names = Object.keys(archive.minutes).sort()
     .filter(function (n) { return !filterSource || n === filterSource; });
 
@@ -481,6 +616,7 @@ function saveArchive() {
   a.download = "training-archive-" + new Date().toISOString().slice(0, 10) + ".json";
   a.click();
   setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  markSaved();
 }
 
 /**
@@ -497,6 +633,10 @@ function loadArchive(text) {
   archive.imports = archive.imports || [];
   archive.minutes = archive.minutes || {};
   cacheSave(archive);
+  /* Restoring means the page was just handed a file that already holds all of
+     this, so nothing is outstanding. */
+  unsavedImports = 0;
+  storeSaveState();
   note("archive restored — " + archive.records.length + " records");
   render();
   return true;
@@ -511,11 +651,18 @@ window.addEventListener("DOMContentLoaded", function () {
   $("save").addEventListener("click", saveArchive);
   $("neighbours").addEventListener("click", importNeighbours);
   $("csv").addEventListener("click", downloadCsv);
+  $("undo").addEventListener("click", undoImport);
   $("filterSource").addEventListener("change", function (e) {
-    filterSource = e.target.value; render();
+    filterSource = e.target.value; storeFilters(); render();
   });
   $("filterFrom").addEventListener("change", function (e) {
-    filterFrom = e.target.value; render();
+    filterFrom = e.target.value; storeFilters(); render();
+  });
+  $("filterTo").addEventListener("change", function (e) {
+    filterTo = e.target.value; storeFilters(); render();
+  });
+  $("more").addEventListener("click", function () {
+    dayLimit = dayLimit ? 0 : 60; storeFilters(); renderDays();
   });
 
   var drop = $("drop");
@@ -537,6 +684,46 @@ window.addEventListener("DOMContentLoaded", function () {
       reader.readAsText(file);
     });
   });
+
+  /*
+   * Paste, for the common case of having the JSON on the clipboard rather than
+   * on disk — copied out of a devtools console, or off another machine. An
+   * archive restores; anything else folds in, exactly as a dropped file does.
+   */
+  document.addEventListener("paste", function (e) {
+    if (!e.clipboardData) return;
+    if (e.clipboardData.files && e.clipboardData.files.length) {
+      e.preventDefault();
+      takeFiles(e.clipboardData.files);
+      return;
+    }
+    var text = (e.clipboardData.getData("text") || "").trim();
+    if (text.charAt(0) !== "{" && text.charAt(0) !== "[") return;
+    e.preventDefault();
+    if (!loadArchive(text)) importText(text, "pasted text");
+  });
+
+  /* Ctrl+S means "save this" everywhere else; here the thing worth saving is
+     the archive, not the page the browser would otherwise offer to write. */
+  document.addEventListener("keydown", function (e) {
+    if (!(e.ctrlKey || e.metaKey) || (e.key !== "s" && e.key !== "S")) return;
+    if (!archive.records.length) return;
+    e.preventDefault();
+    saveArchive();
+  });
+
+  /* The only warning this page can give before the tab that holds the only
+     copy is closed. */
+  window.addEventListener("beforeunload", function (e) {
+    if (unsavedImports <= 0) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+
+  loadSaveState();
+  loadFilters();
+  $("filterFrom").value = filterFrom;
+  $("filterTo").value = filterTo;
 
   render();
 });

@@ -1,77 +1,218 @@
 /* One stylesheet, no build step. The value of this project is that it still
-   runs in five years, and a toolchain is the part that rots first. */
+   runs in five years, and a toolchain is the part that rots first. That rules
+   out a webfont too: everything below draws on fonts the machine already has,
+   so the page looks the same on a plane as it does online. */
 
 :root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --line: #272e38;
-  --ink: #d7dee8;
-  --dim: #7d8ca6;
-  --accent: #58a6ff;
+  --bg: #0b0e14;
+  --panel: #131924;
+  --panel-hi: #171e2b;
+  --line: #232c3b;
+  --line-soft: #1b2230;
+  --ink: #dce4f0;
+  --ink-strong: #f2f6fc;
+  --dim: #8494ad;
+  --accent: #6cb6ff;
   --ok: #3fb950;
   --bad: #f85149;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -12px rgba(0, 0, 0, .6);
+
+  /* Native controls — selects, the date picker — follow this. Without it the
+     browser hands you a white dropdown in the middle of a dark page. */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0 auto;
-  padding: 2rem 1.25rem 4rem;
-  max-inline-size: 60rem;
+  padding: 2.5rem 1.5rem 5rem;
+  max-inline-size: 62rem;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+
+  /* A single cold light source behind the masthead, so the page has a top. */
+  background-image: radial-gradient(60rem 22rem at 50% -8rem, rgba(88, 140, 255, .10), transparent 70%);
+  background-repeat: no-repeat;
 }
 
-h1 { font-size: 1.5rem; margin: 0 0 .35rem; }
-h2 { font-size: 1.05rem; margin: 2.25rem 0 .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
-h3 { font-size: .95rem; margin: 0 0 .35rem; }
+h1 {
+  font-size: 1.9rem;
+  line-height: 1.2;
+  margin: 0 0 .5rem;
+  letter-spacing: -.02em;
+  color: var(--ink-strong);
+}
+
+/*
+ * Section headings carry a rule out to the right margin. It costs no markup —
+ * the pseudo-element just eats the leftover flex space — and it does the one
+ * thing this page needed most: show where one section stops and the next
+ * starts, on a page that is six thousand pixels tall.
+ */
+h2 {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  font-size: .78rem;
+  margin: 3rem 0 .9rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+h2::after {
+  content: "";
+  flex: 1;
+  block-size: 1px;
+  background: linear-gradient(90deg, var(--line), transparent);
+}
+
+h3 { font-size: .95rem; margin: 0 0 .35rem; color: var(--ink-strong); }
 p { margin: .35rem 0; }
-code { font-size: .85em; color: var(--accent); }
+
+code {
+  font-size: .82em;
+  color: var(--accent);
+  background: rgba(108, 182, 255, .08);
+  padding: .1em .4em;
+  border-radius: 4px;
+}
 
 .dim { color: var(--dim); }
+
+/* Every number on this page is meant to be compared with the one above it. */
+b, table, .streaks { font-variant-numeric: tabular-nums; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 /* ---- the drop zone ---- */
 
 .drop {
-  margin-top: 1.5rem;
-  padding: 1.5rem;
+  margin-top: 1.75rem;
+  padding: 1.75rem 1.5rem;
   border: 1px dashed var(--line);
-  border-radius: 10px;
-  background: var(--panel);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
   text-align: center;
-  transition: border-color .12s, background .12s;
+  transition: border-color .15s, background .15s, transform .15s;
 }
 
-.drop.over { border-color: var(--accent); background: #1b2430; }
+.drop:hover { border-color: #2e3a4d; }
 
-.row { display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; margin-top: 1rem; }
+.drop.over {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, #1b2634, #151d29);
+  transform: scale(1.004);
+}
+
+.row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+.drop .row { justify-content: center; }
 
 .btn {
-  padding: .5rem .9rem;
+  padding: .5rem .95rem;
   border: 1px solid var(--line);
   border-radius: 7px;
-  background: #1c2330;
+  background: linear-gradient(180deg, #1e2634, #191f2b);
   color: var(--ink);
   font: inherit;
   cursor: pointer;
+  transition: border-color .12s, background .12s, color .12s;
 }
 
-.btn:hover { border-color: var(--accent); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #05080d; font-weight: 600; }
-.btn:disabled { opacity: .45; cursor: default; border-color: var(--line); }
+.btn:hover { border-color: #3d4c63; color: var(--ink-strong); }
+
+.btn.primary {
+  background: linear-gradient(180deg, #79bdff, #4d9ef5);
+  border-color: #4d9ef5;
+  color: #04070c;
+  font-weight: 600;
+  box-shadow: 0 1px 8px -2px rgba(77, 158, 245, .5);
+}
+
+.btn.primary:hover { background: linear-gradient(180deg, #8cc7ff, #5aa8f7); border-color: #5aa8f7; }
+
+.btn:disabled {
+  opacity: .4;
+  cursor: default;
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--dim);
+  box-shadow: none;
+}
+
+/* Selects and the date field, so the filter row reads as one control strip. */
+select, input[type="date"] {
+  margin-inline-start: .35rem;
+  padding: .42rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-hi);
+  color: var(--ink);
+  font: inherit;
+}
+
+select:hover, input[type="date"]:hover { border-color: #3d4c63; }
+label { color: var(--dim); font-size: .9rem; }
+
+/*
+ * The line under the drop zone that says whether the file on disk is behind
+ * this page. Amber, not red: nothing is broken, something is merely waiting.
+ */
+.savestate {
+  margin: .9rem 0 0;
+  font-size: .87rem;
+  color: var(--dim);
+  min-block-size: 1.2em;
+}
+
+.savestate.warn {
+  color: #e3b341;
+}
+
+.savestate.warn b { color: #f0c674; }
+
+/* Secondary to the download button beside it: available, not advertised. */
+.btn.quiet {
+  padding: .35rem .7rem;
+  font-size: .85rem;
+  background: none;
+  color: var(--dim);
+}
+
+.btn.quiet:hover { color: var(--ink); }
 
 /* ---- cards ---- */
 
-.cards { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.cards { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 
 .card {
-  padding: .85rem 1rem;
+  padding: 1rem 1.1rem;
   border: 1px solid var(--line);
   border-inline-start: 3px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+  box-shadow: var(--shadow);
+  transition: border-color .14s, transform .14s;
 }
+
+.card:hover { transform: translateY(-1px); border-block-color: #2e3a4d; border-inline-end-color: #2e3a4d; }
+
+/* The headline figures. A card is scanned, not read, so the counts outrank
+   the words around them instead of sharing their weight. */
+.card p:first-of-type { color: var(--dim); }
+.card p:first-of-type b { font-size: 1.3rem; font-weight: 650; color: var(--ink-strong); }
+.card p { margin: .3rem 0; }
+.card .dim { font-size: .87rem; }
 
 .card.ok { border-inline-start-color: var(--ok); }
 .card.waiting { border-inline-start-color: var(--dim); }
@@ -79,23 +220,45 @@ code { font-size: .85em; color: var(--accent); }
 /* ---- the day table ---- */
 
 table { inline-size: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-th, td { padding: .3rem .5rem; text-align: right; border-block-end: 1px solid var(--line); }
-th { color: var(--dim); font-weight: 500; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+th, td { padding: .38rem .55rem; text-align: right; border-block-end: 1px solid var(--line-soft); }
+th { color: var(--dim); font-weight: 500; font-size: .76rem; text-transform: uppercase; letter-spacing: .06em; }
 th:first-child, td:first-child { text-align: left; }
 td:last-child { color: var(--ok); font-size: .8rem; }
+
+/* The header of a 1800px table is worth keeping on screen. It is a `tr` of
+   `th` inside the tbody, not a `thead`, so the stickiness goes on the cells. */
+#days th {
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--bg);
+  border-block-end-color: var(--line);
+  z-index: 1;
+}
+
+/* Striping the cells and not the rows leaves that header row alone. */
+#days tr:nth-of-type(even) td { background: rgba(255, 255, 255, .022); }
+#days tr:hover td { background: rgba(108, 182, 255, .07); }
 
 /* ---- the import log ---- */
 
 .log { list-style: none; padding: 0; margin: 0; font-size: .88rem; color: var(--dim); }
-.log li { padding: .3rem 0; border-block-end: 1px solid var(--line); }
+.log li { padding: .4rem 0; border-block-end: 1px solid var(--line-soft); }
 .log li.bad { color: var(--bad); }
 
 /* ------------------------------------------------------------------ *
  * The year                                                            *
  * ------------------------------------------------------------------ */
 
-.streaks { display: flex; gap: 18px; margin: 0 0 10px; align-items: baseline; }
-.streaks b { font-size: 1.3rem; }
+.streaks {
+  display: flex;
+  gap: 1.5rem;
+  margin: 0 0 .9rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  color: var(--dim);
+}
+
+.streaks b { font-size: 1.7rem; font-weight: 650; color: var(--ink-strong); margin-inline-end: .15rem; }
 
 /*
  * Columns of seven, filled top to bottom, so each column is one week — the
@@ -104,44 +267,64 @@ td:last-child { color: var(--ok); font-size: .8rem; }
  */
 .heatmap {
   display: grid;
-  grid-template-rows: repeat(7, 12px);
+  grid-template-rows: repeat(7, 13px);
   grid-auto-flow: column;
-  grid-auto-columns: 12px;
+  grid-auto-columns: 13px;
   gap: 3px;
   overflow-x: auto;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
 }
 
-.heatmap .cell { width: 12px; height: 12px; border-radius: 2px; display: block; }
+.heatmap .cell {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  display: block;
+  transition: outline-color .1s;
+  outline: 1px solid transparent;
+}
+
+.heatmap .cell:hover { outline-color: var(--ink); }
 .heatmap .pad { visibility: hidden; }
 
 /* A rest day: known, and empty. */
-.heatmap .s-rested { background: rgba(127, 127, 127, 0.16); }
+.heatmap .s-rested { background: rgba(140, 155, 180, 0.14); }
 
 /*
  * A day nobody has evidence about. Hatched rather than shaded, because any
  * shade reads as an amount — and the whole point is that there is no amount,
- * only an absence of record.
+ * only an absence of record. Kept faint: on a year that starts in August the
+ * unevidenced days are most of the grid, and at full strength the texture
+ * outshouts the training it is supposed to frame.
  */
 .heatmap .s-unknown {
   background: repeating-linear-gradient(
-    45deg, rgba(127, 127, 127, 0.30) 0 2px, transparent 2px 4px);
+    45deg, rgba(140, 155, 180, 0.16) 0 1px, transparent 1px 4px);
 }
 
-.heatmap .L1 { background: #1f6f43; }
-.heatmap .L2 { background: #2f9c5c; }
-.heatmap .L3 { background: #46c476; }
-.heatmap .L4 { background: #6be294; }
+.heatmap .L1 { background: #1b5e3c; }
+.heatmap .L2 { background: #2b8f55; }
+.heatmap .L3 { background: #45c176; }
+.heatmap .L4 { background: #74e89d; }
 
 /* ------------------------------------------------------------------ *
  * Over time                                                           *
  * ------------------------------------------------------------------ */
 
-.chart { margin: 0 0 18px; }
-.chart h3 { margin: 0 0 4px; font-size: 0.95rem; }
-.chart svg { width: 100%; height: 120px; display: block; }
-.chart .bars rect { fill: rgba(127, 127, 127, 0.45); }
-.chart .acc { fill: none; stroke: #46c476; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.chart {
+  margin: 0 0 .9rem;
+  padding: .9rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+}
+
+.chart h3 { margin: 0 0 .5rem; font-size: 0.95rem; }
+.chart h3 small { display: block; font-weight: 400; font-size: .8rem; margin-top: .15rem; }
+.chart svg { width: 100%; height: 120px; display: block; overflow: visible; }
+.chart .bars rect { fill: rgba(108, 182, 255, .30); transition: fill .1s; }
+.chart .bars rect:hover { fill: rgba(108, 182, 255, .62); }
+.chart .acc { fill: none; stroke: #57d68a; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 
 /*
  * Not `.cards`. That grid is `minmax(15rem, 1fr)`, and a four-column table of
@@ -155,14 +338,15 @@ td:last-child { color: var(--ok); font-size: .8rem; }
  */
 .modes {
   display: grid;
-  gap: .75rem 1.25rem;
+  gap: .75rem 1.5rem;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
 }
 
 .modes > *, .cards > * { min-width: 0; }
 
-.modes table { width: 100%; margin-bottom: 14px; }
-.modes h3 { margin: 0 0 4px; font-size: 0.95rem; }
+.modes table { width: 100%; margin-bottom: 1rem; }
+.modes h3 { margin: 0 0 .4rem; font-size: 0.95rem; }
+.modes tr:hover td { background: rgba(108, 182, 255, .07); }
 
 /* Long labels wrap instead of setting the table's width. */
 .modes td:first-child { overflow-wrap: anywhere; }
@@ -170,3 +354,20 @@ td:last-child { color: var(--ok); font-size: .8rem; }
 /* The heatmap is ~800px of squares; on a narrow window it scrolls rather than
    dragging the page along with it. */
 .heatmap { max-inline-size: 100%; }
+
+/* ---- phones ---- */
+
+@media (max-width: 34rem) {
+  body { padding: 1.75rem 1rem 3.5rem; }
+  h1 { font-size: 1.55rem; }
+  h2 { margin-top: 2.25rem; }
+  .drop { padding: 1.25rem 1rem; }
+  .streaks { gap: 1.1rem; }
+  .streaks b { font-size: 1.45rem; }
+  th, td { padding: .34rem .4rem; }
+}
+
+/* Nothing here needs motion to be understood. */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

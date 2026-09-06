@@ -325,16 +325,18 @@ test("the page renders an archive without throwing", () => {
   });
   const nodes = {};
   /*
-   * Every id the page defines, so this test renders the real page rather than
-   * the half of it that existed when the stub was written. A missing id used to
-   * surface as "Cannot read properties of null", which reads like a bug in the
-   * app and is a bug in the fixture.
+   * Every id the page defines, read out of the page itself.
+   *
+   * This used to be a hand-kept list, and a hand-kept list is wrong the moment
+   * a control is added to `index.html` — the failure being "Cannot read
+   * properties of null", which reads like a bug in the app and is a bug in the
+   * fixture. Taking the ids from the markup means the stub is a stub of the
+   * real page and stays one.
    */
-  for (const id of ["log", "save", "sources", "overlap", "days", "file",
-                    "neighbours", "drop", "streaks", "heatmap", "charts",
-                    "modes", "csv", "filterSource", "filterFrom"]) {
-    nodes[id] = el();
-  }
+  const markup = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const ids = (markup.match(/\bid="[^"]+"/g) || []).map((m) => m.slice(4, -1));
+  assert.ok(ids.length > 10, "no ids found in index.html — the fixture is reading the wrong file");
+  for (const id of ids) nodes[id] = el();
 
   let onReady = null;
   const ctx = {
@@ -342,6 +344,7 @@ test("the page renders an archive without throwing", () => {
     document: {
       getElementById: (id) => nodes[id] || null,
       createElement: () => el(),
+      addEventListener() {},
     },
     localStorage: { getItem: () => null, setItem() {}, key: () => null, length: 0 },
     Date, JSON, Math, Number, String, Object, Array, Blob: function () {},
