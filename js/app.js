@@ -138,7 +138,15 @@ function watchSections() {
       seen[entries[i].target.id] = entries[i].isIntersecting;
     }
     paint();
-  }, { rootMargin: "-4rem 0px -70% 0px" });
+  /* Pixels, not `rem`.
+     *
+     * `rootMargin` accepts px and % and nothing else, and a `rem` here does not
+     * degrade — it throws a SyntaxError out of the constructor. That threw out
+     * of `DOMContentLoaded`, which is where every listener on this page is
+     * attached, so the file input, the drop zone and paste were all left
+     * unwired: importing did nothing at all, silently. 64px is the 4rem the
+     * topbar is tall. */
+  }, { rootMargin: "-64px 0px -70% 0px" });
 
   for (var j = 0; j < sections.length; j++) observer.observe(sections[j]);
 }
@@ -486,7 +494,7 @@ function fmt2(x) {
 
 /** Volume and accuracy per mode, which is the one view the trainers cannot give. */
 function renderModes() {
-  var host = $("modes");
+  var host = $("modeTables");
   var names = Object.keys(archive.minutes).sort();
   host.innerHTML = "";
 
@@ -636,7 +644,7 @@ function unitLine(name, main) {
 
 function renderSources() {
   var names = Object.keys(archive.minutes).sort();
-  var host = $("sources");
+  var host = $("sourceCards");
   host.innerHTML = "";
 
   if (!names.length) {
@@ -672,7 +680,7 @@ function renderSources() {
  */
 function renderOverlap() {
   var names = Object.keys(archive.minutes).sort();
-  var host = $("overlap");
+  var host = $("overlapCards");
   host.innerHTML = "";
 
   if (names.length < 2) {
@@ -704,7 +712,7 @@ function renderDays() {
     return (!filterFrom || d >= filterFrom) && (!filterTo || d <= filterTo);
   });
   var all = (dayLimit ? matching.slice(-dayLimit) : matching.slice()).reverse();
-  var host = $("days");
+  var host = $("daysTable");
 
   var more = $("more");
   if (more) {
@@ -780,7 +788,8 @@ function loadArchive(text) {
  * ------------------------------------------------------------------ */
 
 window.addEventListener("DOMContentLoaded", function () {
-  watchSections();
+  /* Last, and guarded. The section highlight is decoration; the listeners below
+     are the page. Ordering it first meant one bad argument cost the import. */
   $("file").addEventListener("change", function (e) { takeFiles(e.target.files); e.target.value = ""; });
   $("save").addEventListener("click", saveArchive);
   $("neighbours").addEventListener("click", importNeighbours);
@@ -860,4 +869,6 @@ window.addEventListener("DOMContentLoaded", function () {
   $("filterTo").value = filterTo;
 
   render();
+
+  try { watchSections(); } catch (e) { /* highlight only; the page works without it */ }
 });

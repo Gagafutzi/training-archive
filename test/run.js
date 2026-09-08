@@ -345,6 +345,7 @@ test("the page renders an archive without throwing", () => {
     document: {
       getElementById: (id) => nodes[id] || null,
       createElement: () => el(),
+      querySelectorAll: () => [],
       addEventListener() {},
     },
     localStorage: { getItem: () => null, setItem() {}, key: () => null, length: 0 },
@@ -352,6 +353,25 @@ test("the page renders an archive without throwing", () => {
     URL: { createObjectURL: () => "", revokeObjectURL() {} },
     setTimeout: () => 0,
     FileReader: function () {},
+    /*
+     * The real reason this test passed while the page was dead.
+     *
+     * `watchSections` returns early when `IntersectionObserver` is missing, and
+     * under node it always was — so the observer that threw on every real load
+     * was never constructed here. This one is as strict about `rootMargin` as
+     * the browser is, and nothing else.
+     */
+    IntersectionObserver: function (fn, opts) {
+      const margin = (opts && opts.rootMargin) || "0px";
+      for (const part of String(margin).trim().split(/\s+/)) {
+        if (!/^-?\d+(\.\d+)?(px|%)$/.test(part)) {
+          throw new SyntaxError(
+            "Failed to construct 'IntersectionObserver': rootMargin must be"
+            + " specified in pixels or percent.");
+        }
+      }
+      this.observe = function () {};
+    },
   };
   ctx.window = {
     addEventListener: (type, fn) => { if (type === "DOMContentLoaded") onReady = fn; },
@@ -387,9 +407,9 @@ test("the page renders an archive without throwing", () => {
   ctx.archive = archive;
   ctx.render();
 
-  assert.ok(nodes.days.innerHTML.includes("2026-08-25"), "the day table is empty");
-  assert.ok(nodes.sources.innerHTML.includes("syllogimous"), "the sources are empty");
-  assert.ok(nodes.overlap.innerHTML.includes("of 20"), "the overlap gate says nothing");
+  assert.ok(nodes.daysTable.innerHTML.includes("2026-08-25"), "the day table is empty");
+  assert.ok(nodes.sourceCards.innerHTML.includes("syllogimous"), "the sources are empty");
+  assert.ok(nodes.overlapCards.innerHTML.includes("of 20"), "the overlap gate says nothing");
   assert.strictEqual(nodes.save.disabled, false, "the download button stayed disabled");
 });
 
@@ -1094,6 +1114,54 @@ test("the middle of the times, not their average", function () {
   assert.strictEqual(insight.median([]), null, "no times should be no answer");
   assert.strictEqual(insight.median([5, 6, 7, 6000]), 6.5,
     "one twenty-minute answer moved the middle");
+});
+
+/* ------------------------------------------------------------------ *
+ * The page itself                                                     *
+ * ------------------------------------------------------------------ *
+ *
+ * `app.js` is called wiring and has no tests, which is exactly why import
+ * broke: a `rootMargin` of "-4rem" threw out of the `IntersectionObserver`
+ * constructor, that constructor ran first inside `DOMContentLoaded`, and so no
+ * listener on the page was ever attached. Choosing a file did nothing, dropping
+ * one did nothing, and nothing appeared in the console the page shows you.
+ *
+ * These three read the two files as text. They cannot run the page, but they
+ * can hold the contracts between the markup and the wiring — which is where
+ * both of the faults were.
+ */
+
+const PAGE_HTML = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+const PAGE_JS = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+
+test("page: no id is used twice", () => {
+  const seen = new Map();
+  for (const m of PAGE_HTML.matchAll(/\bid="([^"]+)"/g)) {
+    seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+  }
+  const dupes = [...seen].filter(([, n]) => n > 1).map(([id]) => id);
+  assert.deepStrictEqual(dupes, [],
+    "getElementById returns the first match, so a container sharing its"
+    + " section's id makes the page overwrite the whole section: " + dupes.join(", "));
+});
+
+test("page: every element the wiring looks up exists", () => {
+  const ids = new Set([...PAGE_HTML.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
+  const missing = [...new Set([...PAGE_JS.matchAll(/\$\("([^"]+)"\)/g)].map(m => m[1]))]
+    .filter(id => !ids.has(id));
+  assert.deepStrictEqual(missing, [],
+    "app.js reads elements the markup does not define: " + missing.join(", "));
+});
+
+test("page: rootMargin is in units rootMargin accepts", () => {
+  for (const m of PAGE_JS.matchAll(/rootMargin:\s*"([^"]*)"/g)) {
+    for (const part of m[1].trim().split(/\s+/)) {
+      assert.ok(/^-?\d+(\.\d+)?(px|%)$/.test(part),
+        "`" + part + "` is not px or %, and IntersectionObserver throws on it"
+        + " rather than ignoring it — taking every listener in"
+        + " DOMContentLoaded down with it");
+    }
+  }
 });
 
 for (const [name, fn] of cases) {
