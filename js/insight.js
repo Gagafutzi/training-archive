@@ -209,6 +209,51 @@ function series(archive, source, minItems) {
   });
 }
 
+/**
+ * What a correct answer was worth guessing at.
+ *
+ * A record carries the answer mode it was given under, and the modes are not
+ * comparable: true or false is one chance in two, a three-way pick one in
+ * three, and a six-slot construction about one in seven hundred. Ninety per
+ * cent on true/false and sixty on a construction are not what they look like
+ * side by side — the first is barely above guessing and the second is nowhere
+ * near it.
+ *
+ * Absent for a record that did not say, and then nothing is corrected: an
+ * assumed chance level would be this tool inventing the number it is supposed
+ * to be reporting.
+ */
+function chanceOf(raw) {
+  if (!raw || !raw.answerMode) return null;
+  var slots = Number(raw.slots) || 0;
+  var options = Number(raw.options) || 3;
+  var choices = Number(raw.choices) || 0;
+
+  if (raw.answerMode === "choice") return choices > 0 ? 1 / choices : 1 / 3;
+  if (raw.answerMode === "construct") {
+    return slots > 0 ? Math.pow(1 / Math.max(2, options), slots) : null;
+  }
+  if (raw.answerMode === "map") {
+    if (slots <= 0 || options <= 1) return null;
+    var ways = 1;
+    for (var i = 0; i < slots; i++) ways *= Math.max(1, options - i);
+    return 1 / ways;
+  }
+  return 0.5;
+}
+
+/**
+ * Accuracy with the guessing taken out: 0 is what never knowing would score,
+ * 1 is flawless.
+ *
+ * The same correction RNB's own bars use, for the same reason. Null where the
+ * chance level is unknown, so a raw figure is never quietly relabelled.
+ */
+function corrected(right, n, chance) {
+  if (!n || chance == null || chance >= 1) return null;
+  return Math.max(0, (right / n - chance) / (1 - chance));
+}
+
 /** Volume and accuracy per label — per mode, per deck, per whatever it names. */
 function byLabel(archive, source) {
   var out = {};
@@ -216,19 +261,71 @@ function byLabel(archive, source) {
     var r = archive.records[i];
     if (r.source !== source) continue;
     var key = r.label || "unlabelled";
-    var e = (out[key] ??= { label: key, n: 0, right: 0, seconds: 0 });
+    var e = (out[key] ??= {
+      label: key, n: 0, right: 0, seconds: 0,
+      chanceSum: 0, chanceN: 0, knownRight: 0, times: [],
+      negations: 0, metas: 0, detailed: 0,
+    });
     e.n++;
     if (r.correct) e.right++;
     e.seconds += r.seconds || 0;
+    if (r.seconds) e.times.push(r.seconds);
+
+    /*
+     * The detail every record has carried and nothing has read.
+     *
+     * `raw` is the exporting program's own record of the item — how it was
+     * answered, what modifiers it had on, how deep the conclusion was. Summed
+     * here rather than shown per item: three thousand rows is a file, and what
+     * a page can say is what they come to.
+     */
+    var chance = chanceOf(r.raw);
+    if (chance != null) {
+      e.chanceSum += chance;
+      e.chanceN++;
+      if (r.correct) e.knownRight++;
+    }
+    if (r.raw) {
+      e.detailed++;
+      e.negations += Number(r.raw.negations) || 0;
+      e.metas += Number(r.raw.metaRelations) || 0;
+    }
   }
   return Object.keys(out)
     .map(function (k) {
       var e = out[k];
       e.accuracy = e.n ? e.right / e.n : null;
       e.minutes = e.seconds / 60;
+      /* The mean chance level across the items actually served. */
+      e.chance = e.chanceN ? e.chanceSum / e.chanceN : null;
+      /*
+       * Over the records that said what they were answered under, not over all
+       * of them. Requiring every record to say meant one old item without the
+       * field blanked the whole mode — and the field is recent, so that was
+       * every mode.
+       *
+       * Withheld below half, where the subset is no longer describing the mode
+       * so much as a corner of it.
+       */
+      e.knownShare = e.n ? e.chanceN / e.n : 0;
+      e.corrected = e.knownShare >= 0.5
+        ? corrected(e.knownRight, e.chanceN, e.chance)
+        : null;
+      e.median = median(e.times);
+      /* Per item, so a mode with more items does not look more modified. */
+      e.negationRate = e.detailed ? e.negations / e.detailed : null;
+      e.metaRate = e.detailed ? e.metas / e.detailed : null;
       return e;
     })
     .sort(function (a, b) { return b.n - a.n; });
+}
+
+/** The middle, not the mean: one walk-away moves a mean and not a median. */
+function median(xs) {
+  if (!xs.length) return null;
+  var s = xs.slice().sort(function (a, b) { return a - b; });
+  var m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
 /**
@@ -259,6 +356,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     calendar: calendar, streaks: streaks, series: series, byLabel: byLabel,
     toCsv: toCsv, addDays: addDays, daysBetween: daysBetween,
+    chanceOf: chanceOf, corrected: corrected, median: median,
     TRAINED: TRAINED, RESTED: RESTED, UNKNOWN: UNKNOWN,
   };
 }

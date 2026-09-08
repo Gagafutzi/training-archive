@@ -479,6 +479,11 @@ function renderCharts() {
   });
 }
 
+/** Rates per item sit between zero and two, where one decimal says nothing. */
+function fmt2(x) {
+  return x == null || !isFinite(x) ? "—" : (Math.round(x * 100) / 100).toFixed(2);
+}
+
 /** Volume and accuracy per mode, which is the one view the trainers cannot give. */
 function renderModes() {
   var host = $("modes");
@@ -489,16 +494,49 @@ function renderModes() {
     var rows = byLabel(archive, name).slice(0, 12);
     if (!rows.length) return;
 
+    /*
+     * Four columns became seven, all of them out of detail the records have
+     * always carried and nothing has read.
+     *
+     * `right` and `net` are the same answers counted two ways, and both are
+     * shown because neither is enough alone: the raw figure is what happened,
+     * and the corrected one is what it was worth. Ninety per cent on true/false
+     * is barely above guessing; sixty on a six-slot construction is nowhere
+     * near it. Blank where the record did not say what it was answered under,
+     * rather than assumed.
+     *
+     * `med` is the median seconds an item took, not the mean — one walk-away
+     * moves a mean and leaves a median alone. In an adaptive trainer holding
+     * accuracy at a target, time at a fixed difficulty is the clearest thing
+     * that improves.
+     */
+    var anyDetail = rows.some(function (r) { return r.detailed > 0; });
+
     var body = rows.map(function (r) {
-      return "<tr><td>" + r.label + "</td><td>" + r.n + "</td><td>"
-        + (r.accuracy == null ? "—" : fmt(100 * r.accuracy) + "%")
-        + "</td><td>" + fmt(r.minutes) + "m</td></tr>";
+      var cells = "<tr><td>" + r.label + "</td><td>" + r.n + "</td><td>"
+        + (r.accuracy == null ? "—" : fmt(100 * r.accuracy) + "%") + "</td><td>"
+        + (r.corrected == null ? "—" : fmt(100 * r.corrected) + "%") + "</td><td>"
+        + (r.median == null ? "—" : fmt(r.median) + "s") + "</td>";
+      if (anyDetail) {
+        cells += "<td>" + (r.negationRate == null ? "—" : fmt2(r.negationRate)) + "</td>"
+          + "<td>" + (r.metaRate == null ? "—" : fmt2(r.metaRate)) + "</td>";
+      }
+      return cells + "<td>" + fmt(r.minutes) + "m</td></tr>";
     }).join("");
 
+    var head = "<tr><th>label</th><th>items</th>"
+      + "<th title=\"Answers correct, uncorrected\">right</th>"
+      + "<th title=\"Correct with the guessing taken out: 0 is what never knowing"
+      + " would score, 1 is flawless\">net</th>"
+      + "<th title=\"Median seconds an item took\">med</th>"
+      + (anyDetail
+        ? "<th title=\"Negated premises per item\">neg</th>"
+          + "<th title=\"Meta relations per item\">meta</th>"
+        : "")
+      + "<th>time</th></tr>";
+
     var div = document.createElement("div");
-    div.innerHTML = "<h3>" + name + "</h3><table>"
-      + "<tr><th>label</th><th>items</th><th>right</th><th>time</th></tr>"
-      + body + "</table>";
+    div.innerHTML = "<h3>" + name + "</h3><table>" + head + body + "</table>";
     host.appendChild(div);
   });
 }
@@ -563,6 +601,39 @@ function downloadCsv() {
   note(rows.length + " record(s) written to CSV.");
 }
 
+/**
+ * The unit a source's difficulty is in — and the ones it is also in.
+ *
+ * A source can change how it measures itself. Syllogimous did: most of this
+ * archive is premise counts and a recent slice is the level scale, which are
+ * different quantities on different scales. The chart draws the majority unit
+ * and says nothing, so a line that looks like steady difficulty is a line
+ * measured one way for most of its length.
+ *
+ * Named here because it is a property of the record rather than of the drawing,
+ * and because "difficulty in premises" is a thing worth knowing before reading
+ * a difficulty chart.
+ */
+function unitLine(name, main) {
+  var counts = {};
+  for (var i = 0; i < archive.records.length; i++) {
+    var r = archive.records[i];
+    if (r.source !== name || !r.unit) continue;
+    counts[r.unit] = (counts[r.unit] || 0) + 1;
+  }
+
+  var others = Object.keys(counts).filter(function (u) { return u !== main; });
+  var line = "<p class='dim'>difficulty in <code>" + main + "</code>";
+  if (!others.length) return line + "</p>";
+
+  others.sort(function (a, b) { return counts[b] - counts[a]; });
+  var parts = others.map(function (u) {
+    return "<code>" + u + "</code> \u00d7" + counts[u];
+  });
+  return line + " \u2014 and " + parts.join(", ")
+    + ", which the chart does not draw</p>";
+}
+
 function renderSources() {
   var names = Object.keys(archive.minutes).sort();
   var host = $("sources");
@@ -585,7 +656,7 @@ function renderSources() {
         ? "<p class='dim'>" + fmt(s.accuracy * 100) + "% correct · "
           + s.first + " to " + s.last + "</p>"
         : "")
-      + (s && s.unit ? "<p class='dim'>difficulty in <code>" + s.unit + "</code></p>" : "");
+      + (s && s.unit ? unitLine(name, s.unit) : "");
     host.appendChild(div);
   });
 }

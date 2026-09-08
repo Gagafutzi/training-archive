@@ -19,6 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { mergeRecords, hashRow, makeRecord } = require("../js/record.js");
+const insight = require("../js/insight.js");
 const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrecision, readRotation, readSynth, readPrepared, readArchiveExport } = require("../js/adapters.js");
 const { execFileSync } = require("child_process");
 const A = require("../js/archive.js");
@@ -1030,6 +1031,71 @@ test("synth: the adapter claims only its own file", () => {
   assert.strictEqual(readFile(JSON.stringify(synthExport([synthSession()]))).source, "synth");
 });
 
+/* ------------------------------------------------------------------ *
+ * What the records carry, and what the page had never read             *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every record has carried the exporting program's own account of the item —
+ * how it was answered, what modifiers it had on — and the page read six fields
+ * and ignored the rest. The one that matters most is the answer mode, because
+ * accuracy is not comparable without it: ninety per cent on true or false is
+ * barely above guessing, and sixty on a six-slot construction is nowhere near
+ * it.
+ */
+test("a correct answer is worth what it was worth guessing at", function () {
+  assert.strictEqual(insight.chanceOf({ answerMode: "boolean" }), 0.5, "true or false is one in two");
+  assert.strictEqual(insight.chanceOf({ answerMode: "choice", choices: 4 }), 0.25, "a four-way pick");
+  /* Compared with a tolerance: `Math.pow(1/3, 3)` and `1/27` differ in the
+     last bit, which is a fact about doubles and not about guessing. */
+  assert.ok(
+    Math.abs(insight.chanceOf({ answerMode: "construct", slots: 3, options: 3 }) - 1 / 27) < 1e-12,
+    "a three-slot construction");
+  assert.strictEqual(insight.chanceOf({ answerMode: "map", slots: 2, options: 4 }), 1 / 12,
+    "an ordered pick of two from four");
+});
+
+test("a record that did not say is not assumed", function () {
+  assert.strictEqual(insight.chanceOf(null), null, "a record with no detail was given a chance level");
+  assert.strictEqual(insight.chanceOf({}), null, "a record with no answer mode was given one");
+  assert.strictEqual(insight.corrected(8, 10, null), null, "an unknown chance level still corrected");
+});
+
+test("correcting for chance reorders what looks best", function () {
+  /*
+   * Seventy per cent on true-or-false against sixty on a one-in-ten pick: 0.40
+   * against 0.56, so the lower raw figure is the better answer.
+   *
+   * Not every such pair reverses, and the first version of this assumed one
+   * that does not — eighty against a coin still beats sixty against one in ten,
+   * 0.60 to 0.56. The correction is a scale, not a thumb on the balance.
+   */
+  var easy = insight.corrected(70, 100, 0.5);
+  var hard = insight.corrected(60, 100, 0.1);
+  assert.ok(hard > easy,
+    "sixty per cent against one chance in ten should beat seventy against one"
+    + " in two, and read " + hard.toFixed(2) + " against " + easy.toFixed(2));
+  assert.strictEqual(insight.corrected(50, 100, 0.5), 0,
+    "answering at chance should read nothing");
+  assert.strictEqual(insight.corrected(100, 100, 0.5), 1,
+    "answering everything should read one");
+});
+
+test("never below nothing, however badly it went", function () {
+  assert.strictEqual(insight.corrected(10, 100, 0.5), 0,
+    "answering below chance read as negative, which is a worse score than never"
+    + " pressing and is not a thing");
+});
+
+/** One walk-away moves a mean and leaves a median alone. */
+test("the middle of the times, not their average", function () {
+  assert.strictEqual(insight.median([5, 6, 7]), 6, "an odd count takes the middle one");
+  assert.strictEqual(insight.median([4, 6]), 5, "an even count takes the two middle ones");
+  assert.strictEqual(insight.median([]), null, "no times should be no answer");
+  assert.strictEqual(insight.median([5, 6, 7, 6000]), 6.5,
+    "one twenty-minute answer moved the middle");
+});
+
 for (const [name, fn] of cases) {
   try {
     fn();
@@ -1041,3 +1107,4 @@ for (const [name, fn] of cases) {
 }
 console.log(`\n${passed}/${cases.length} passed`);
 process.exit(passed === cases.length ? 0 : 1);
+
