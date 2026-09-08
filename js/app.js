@@ -10,15 +10,30 @@
    `archive.js`, which is the half with tests. This file is wiring.
 */
 
-/* global emptyArchive, fold, days, dayRow, overlap, sourceSummary, cacheSave, cacheLoad, readFile */
+/* global emptyArchive, fold, foldNotes, days, dayRow, overlap, sourceSummary, cacheSave,
+   cacheLoad, readFile, makeNote, noteId, tombstone, mergeNotes, visibleNotes, notesOn,
+   measureSeries, tagCounts */
 
 var archive = cacheLoad() || emptyArchive();
+if (!Array.isArray(archive.notes)) archive.notes = [];
 var $ = function (id) { return document.getElementById(id); };
 
 /** Weeks of overlap before a cross-app comparison is worth computing. */
 var WEEKS_NEEDED = 20;
 
 function fmt(n, digits) { return Number(n).toFixed(digits == null ? 0 : digits); }
+
+/*
+ * Everything else on this page is built out of source names and numbers this
+ * code produced. Notes are the first text on it that a person typed, so from
+ * here on the page can be handed a `<` — and every string that came from a
+ * human goes through this before it goes near innerHTML.
+ */
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
 
 /* ------------------------------------------------------------------ *
  * Whether the file is behind the page                                 *
@@ -207,10 +222,17 @@ function importText(text, name) {
       var r = fold(archive, one, name, reading.writtenOn);
       total.added += r.added; total.updated += r.updated; total.days += r.days;
     }
+    /* Notes belong to no source, so they are folded once rather than once per
+       reading — and they are folded at all, which a restore depends on: they
+       exist in this file and in no export anywhere. */
+    var noted = foldNotes(archive, reading.notes);
     var ok = cacheSave(archive);
     note(name + " → archive (" + reading.readings.length + " sources): "
       + total.added + " new, " + total.updated + " updated, "
-      + total.days + " new days" + (ok ? "" : " (cache full — keep the archive file)"));
+      + total.days + " new days"
+      + (noted.added || noted.updated
+        ? ", " + noted.added + " new notes, " + noted.updated + " updated" : "")
+      + (ok ? "" : " (cache full — keep the archive file)"));
     markUnsaved();
     render();
     return;
@@ -312,6 +334,9 @@ function render() {
   renderOverlap();
   renderFilters();
   renderDays();
+  renderNotes();
+  renderMeasures();
+  renderKnownTags();
   renderSaveState();
   refreshUndo();
   $("save").disabled = archive.records.length === 0;
@@ -739,10 +764,250 @@ function renderDays() {
       html += "<td class='" + (m >= 1 ? "" : "dim") + "'>" + (m >= 1 ? fmt(m) + "m" : "—") + "</td>";
     });
     html += "<td><b>" + fmt(row.total) + "m</b></td>";
-    html += "<td>" + (trained.length > 1 ? "both" : "") + "</td></tr>";
+    /* A note marker, and only on days this table already lists.
+       The heatmap deliberately does not get one: a filled square there means a
+       day someone trained, and marking a note on a rest day would make the year
+       claim training that did not happen. The Notes section is the complete
+       list; this is a pointer from a day you are already looking at. */
+    var noted = notesOn(archive, day);
+    html += "<td>" + (trained.length > 1 ? "both" : "")
+      + (noted ? " <span class='pill' title='" + noted + " note"
+        + (noted === 1 ? "" : "s") + "'>&#9998; " + noted + "</span>" : "")
+      + "</td></tr>";
   });
 
   host.innerHTML = html;
+}
+
+
+/* ------------------------------------------------------------------ *
+ * Notes                                                               *
+ * ------------------------------------------------------------------ *
+ *
+ * The one part of the archive that is written here rather than read out of
+ * somebody else's export, which changes two things about the wiring.
+ *
+ * A note is unsaved the moment it is written. Everywhere else on this page the
+ * unsaved warning covers an import, and losing one costs a drag and drop
+ * because the export it came from is still on disk. A note has no export behind
+ * it: close the tab without downloading and it is simply gone. So writing,
+ * editing and deleting all mark the file behind — and `beforeunload` already
+ * asks before the tab that holds the only copy is closed.
+ *
+ * And every string here was typed by a person, so every one of them is escaped.
+ */
+
+var editingNote = null;      // the id being edited, or null for a new note
+var noteFilter = "";
+
+/** Local today, not UTC. A note written at one in the morning means today. */
+function localDay() {
+  var d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 10);
+}
+
+function parseTags(text) {
+  return String(text || "").split(/[,\n]/).map(function (t) { return t.trim(); })
+    .filter(function (t) { return t.length; });
+}
+
+function noteFormValues() {
+  return {
+    day: $("noteDay").value || localDay(),
+    text: $("noteText").value.trim(),
+    tags: parseTags($("noteTags").value),
+    measure: {
+      name: $("noteMeasure").value.trim(),
+      value: $("noteValue").value,
+      unit: $("noteUnit").value.trim(),
+    },
+  };
+}
+
+function clearNoteForm() {
+  editingNote = null;
+  $("noteDay").value = localDay();
+  $("noteText").value = "";
+  $("noteTags").value = "";
+  $("noteMeasure").value = "";
+  $("noteValue").value = "";
+  $("noteUnit").value = "";
+  $("noteSave").textContent = "Add note";
+  $("noteCancel").hidden = true;
+  $("noteHint").textContent = "";
+}
+
+function submitNote(e) {
+  if (e) e.preventDefault();
+  var v = noteFormValues();
+  var measure = makeNote({ day: v.day, measure: v.measure }).measure;
+
+  /* A note with neither words nor a number is not a note. Saying so beats
+     silently adding a blank row that only shows up in the file. */
+  if (!v.text && !measure && !v.tags.length) {
+    $("noteHint").textContent = "Nothing to save — write something, or give it a number.";
+    return;
+  }
+  /* A measure name with no readable number is the one mistake worth refusing:
+     it looks saved and carries nothing. */
+  if (v.measure.name && !measure) {
+    $("noteHint").textContent = "“" + v.measure.name + "” has no number — add a value, or clear the name.";
+    return;
+  }
+
+  var now = Date.now();
+  var existing = editingNote && archive.notes.filter(function (n) { return n.id === editingNote; })[0];
+  var next = makeNote({
+    id: existing ? existing.id : noteId(now),
+    day: v.day,
+    at: existing ? existing.at : now,
+    editedAt: now,
+    text: v.text,
+    tags: v.tags,
+    measure: v.measure,
+  });
+
+  archive.notes = mergeNotes(
+    archive.notes.filter(function (n) { return n.id !== next.id; }), [next]).notes;
+  archive.updatedAt = now;
+  cacheSave(archive);
+  markUnsaved();
+  note((existing ? "note edited" : "note added") + " — " + next.day);
+  clearNoteForm();
+  render();
+}
+
+function editNote(id) {
+  var n = archive.notes.filter(function (x) { return x.id === id; })[0];
+  if (!n || n.deleted) return;
+  editingNote = id;
+  $("noteDay").value = n.day;
+  $("noteText").value = n.text;
+  $("noteTags").value = n.tags.join(", ");
+  $("noteMeasure").value = n.measure ? n.measure.name : "";
+  $("noteValue").value = n.measure ? n.measure.value : "";
+  $("noteUnit").value = n.measure ? n.measure.unit : "";
+  $("noteSave").textContent = "Save changes";
+  $("noteCancel").hidden = false;
+  $("noteHint").textContent = "Editing the note of " + n.day + ".";
+  $("noteText").focus();
+}
+
+/*
+ * Deleting leaves a tombstone, which is what makes the deletion survive.
+ *
+ * Dropping the row instead would work until the next time an older archive was
+ * folded in, at which point the note would quietly come back. `tombstone` keeps
+ * the id and the time and throws the content away, so the deletion propagates
+ * by the same rule an edit does and the file stops holding the text.
+ */
+function deleteNote(id) {
+  var n = archive.notes.filter(function (x) { return x.id === id; })[0];
+  if (!n) return;
+  if (!confirm("Delete this note? The text is removed from the archive file.")) return;
+  archive.notes = mergeNotes(
+    archive.notes.filter(function (x) { return x.id !== id; }),
+    [tombstone(n, Date.now())]).notes;
+  archive.updatedAt = Date.now();
+  if (editingNote === id) clearNoteForm();
+  cacheSave(archive);
+  markUnsaved();
+  note("note deleted — " + n.day);
+  render();
+}
+
+function matchesFilter(n) {
+  if (!noteFilter) return true;
+  var q = noteFilter.toLowerCase();
+  return n.text.toLowerCase().indexOf(q) >= 0
+    || n.tags.join(" ").indexOf(q) >= 0
+    || n.day.indexOf(q) >= 0
+    || (n.measure && n.measure.name.toLowerCase().indexOf(q) >= 0);
+}
+
+function renderNotes() {
+  var host = $("noteList");
+  if (!host) return;
+  var all = visibleNotes(archive);
+  var shown = all.filter(matchesFilter);
+
+  if (!all.length) {
+    host.innerHTML = "<li class='dim'>No notes yet. The first one worth writing "
+      + "is usually whatever you would not remember in a year.</li>";
+    return;
+  }
+  if (!shown.length) {
+    host.innerHTML = "<li class='dim'>No note matches “" + esc(noteFilter) + "”.</li>";
+    return;
+  }
+
+  host.innerHTML = shown.map(function (n) {
+    var m = n.measure
+      ? "<span class='pill'>" + esc(n.measure.name) + " <b>" + esc(n.measure.value) + "</b>"
+        + (n.measure.unit ? " " + esc(n.measure.unit) : "") + "</span>"
+      : "";
+    var tags = n.tags.map(function (t) {
+      return "<span class='tag'>" + esc(t) + "</span>";
+    }).join("");
+    var edited = n.editedAt > n.at
+      ? " <span class='dim'>· edited " + new Date(n.editedAt).toISOString().slice(0, 10) + "</span>"
+      : "";
+    return "<li class='note' data-id='" + esc(n.id) + "'>"
+      + "<div class='note__head'><b>" + esc(n.day) + "</b>" + edited + m
+      + "<span class='note__acts'>"
+      + "<button class='btn quiet' type='button' data-act='edit'>Edit</button>"
+      + "<button class='btn quiet' type='button' data-act='delete'>Delete</button>"
+      + "</span></div>"
+      + (n.text ? "<p class='note__text'>" + esc(n.text) + "</p>" : "")
+      + (tags ? "<div class='tagrow'>" + tags + "</div>" : "")
+      + "</li>";
+  }).join("");
+}
+
+/**
+ * Each named measure, in order, with its own units.
+ *
+ * Deliberately a list and not a line on the chart above. Those axes are minutes
+ * and one source's difficulty; an IQ score shares neither, and drawing it there
+ * would be the same mistake as drawing premise counts and n-back load as one
+ * series. A name recorded in two units gets one heading that says so rather
+ * than two that each look clean.
+ */
+function renderMeasures() {
+  var host = $("measures");
+  if (!host) return;
+  var series = measureSeries(archive);
+  host.innerHTML = "";
+  if (!series.length) return;
+
+  host.innerHTML = series.map(function (s) {
+    var points = s.points.map(function (p) {
+      return "<span class='point'><b>" + esc(p.value) + "</b>"
+        + (p.unit ? " " + esc(p.unit) : "")
+        + " <span class='dim'>" + esc(p.day) + "</span></span>";
+    }).join("");
+    return "<div class='card'><h3>" + esc(s.name) + "</h3>"
+      + "<div class='points'>" + points + "</div>"
+      + (s.mixed
+        ? "<p class='dim'>Recorded in " + s.units.map(function (u) {
+            return "<code>" + esc(u || "no unit") + "</code>";
+          }).join(", ") + " — these are not one series, and are not read as one.</p>"
+        : "")
+      + "</div>";
+  }).join("");
+}
+
+function renderKnownTags() {
+  var host = $("noteTags-known");
+  if (!host) return;
+  var tags = tagCounts(archive).slice(0, 12);
+  host.innerHTML = tags.length
+    ? "<span class='dim'>In use:</span> " + tags.map(function (t) {
+        return "<button class='tag' type='button' data-tag='" + esc(t.tag) + "'>"
+          + esc(t.tag) + " <span class='dim'>" + t.count + "</span></button>";
+      }).join("")
+    : "";
 }
 
 /* ------------------------------------------------------------------ *
@@ -773,12 +1038,14 @@ function loadArchive(text) {
   archive = parsed;
   archive.imports = archive.imports || [];
   archive.minutes = archive.minutes || {};
+  archive.notes = Array.isArray(archive.notes) ? archive.notes : [];
   cacheSave(archive);
   /* Restoring means the page was just handed a file that already holds all of
      this, so nothing is outstanding. */
   unsavedImports = 0;
   storeSaveState();
-  note("archive restored — " + archive.records.length + " records");
+  note("archive restored — " + archive.records.length + " records"
+    + (archive.notes.length ? ", " + visibleNotes(archive).length + " notes" : ""));
   render();
   return true;
 }
@@ -807,6 +1074,31 @@ window.addEventListener("DOMContentLoaded", function () {
   $("more").addEventListener("click", function () {
     dayLimit = dayLimit ? 0 : 60; storeFilters(); renderDays();
   });
+
+  $("noteForm").addEventListener("submit", submitNote);
+  $("noteCancel").addEventListener("click", function () { clearNoteForm(); });
+  $("noteFilter").addEventListener("input", function (e) {
+    noteFilter = e.target.value.trim(); renderNotes();
+  });
+  /* Delegated, because the list is rewritten on every render and listeners
+     bound to its rows would be bound to nodes the next render throws away. */
+  $("noteList").addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("button[data-act]");
+    if (!btn) return;
+    var li = btn.closest("li[data-id]");
+    if (!li) return;
+    if (btn.getAttribute("data-act") === "edit") editNote(li.getAttribute("data-id"));
+    else deleteNote(li.getAttribute("data-id"));
+  });
+  $("noteTags-known").addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("button[data-tag]");
+    if (!btn) return;
+    var have = parseTags($("noteTags").value);
+    var tag = btn.getAttribute("data-tag");
+    if (have.indexOf(tag) < 0) have.push(tag);
+    $("noteTags").value = have.join(", ");
+  });
+  clearNoteForm();
 
   var drop = $("drop");
   ["dragenter", "dragover"].forEach(function (type) {

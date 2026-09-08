@@ -8,7 +8,7 @@
      that loaded the page while the wiring was broken would keep serving
      itself the broken script for ten more minutes — and the failure is
      silent, so it would read as "the fix did not work". Bump on release. -->
-<link rel="stylesheet" href="css/base.css?v=2">
+<link rel="stylesheet" href="css/base.css?v=3">
 </head>
 <body>
 
@@ -22,6 +22,7 @@
     <a href="#modes">Modes</a>
     <a href="#overlap">Overlap</a>
     <a href="#days">Days</a>
+    <a href="#notes">Notes</a>
     <a href="#imports">Log</a>
   </div>
   <!-- The one action worth reaching from anywhere: the page is six thousand
@@ -111,15 +112,64 @@
   <table id="daysTable"></table>
 </section>
 
+<section id="notes">
+  <h2>Notes</h2>
+  <p class="dim">
+    Everything the trainers cannot tell you &mdash; a test score, an illness, a
+    change of dose, a month you felt slow. None of it is in any export, and all
+    of it is what makes a two-year series readable. Notes live in the archive
+    file with the records, and in <b>no export anywhere</b>: this file or
+    nowhere.
+  </p>
+
+  <form id="noteForm" class="noteform">
+    <div class="row">
+      <label>Day <input id="noteDay" type="date" required></label>
+      <label class="grow">Tags
+        <input id="noteTags" type="text" placeholder="sleep, iq, illness" autocomplete="off">
+      </label>
+    </div>
+    <label class="grow">
+      <textarea id="noteText" rows="3" placeholder="What happened, how it felt, what you changed&hellip;"></textarea>
+    </label>
+    <!-- A score kept as prose can never be put beside the next one, so the
+         number gets its own three fields. Optional: most notes are just text. -->
+    <fieldset class="measure">
+      <legend>A number, if there is one</legend>
+      <div class="row">
+        <label>Measure <input id="noteMeasure" type="text" placeholder="RAPM" autocomplete="off"></label>
+        <label>Value <input id="noteValue" type="number" step="any" placeholder="27"></label>
+        <label>Unit <input id="noteUnit" type="text" placeholder="raw" autocomplete="off"></label>
+      </div>
+    </fieldset>
+    <div class="row">
+      <button id="noteSave" class="btn primary" type="submit">Add note</button>
+      <button id="noteCancel" class="btn quiet" type="button" hidden>Cancel edit</button>
+      <span id="noteHint" class="dim"></span>
+    </div>
+  </form>
+
+  <div id="noteTags-known" class="tagrow"></div>
+  <div id="measures" class="cards"></div>
+
+  <div class="row">
+    <label class="grow">Find
+      <input id="noteFilter" type="search" placeholder="text or tag" autocomplete="off">
+    </label>
+  </div>
+  <ul id="noteList" class="notes"></ul>
+</section>
+
 <section id="imports">
   <h2>Imports</h2>
   <ul id="log" class="log"></ul>
 </section>
 
-<script src="js/record.js?v=2"></script>
-<script src="js/adapters.js?v=2"></script>
-<script src="js/archive.js?v=2"></script>
-<script src="js/insight.js?v=2"></script>
-<script src="js/app.js?v=2"></script>
+<script src="js/record.js?v=3"></script>
+<script src="js/notes.js?v=3"></script>
+<script src="js/adapters.js?v=3"></script>
+<script src="js/archive.js?v=3"></script>
+<script src="js/insight.js?v=3"></script>
+<script src="js/app.js?v=3"></script>
 </body>
 </html>

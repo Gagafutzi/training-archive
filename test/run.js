@@ -20,6 +20,7 @@ const path = require("path");
 
 const { mergeRecords, hashRow, makeRecord } = require("../js/record.js");
 const insight = require("../js/insight.js");
+const N = require("../js/notes.js");
 const { readFile, readSyllogimous, readRnb, readCct, readEwmt, readPrecision, readRotation, readSynth, readPrepared, readArchiveExport } = require("../js/adapters.js");
 const { execFileSync } = require("child_process");
 const A = require("../js/archive.js");
@@ -318,10 +319,11 @@ test("the page renders an archive without throwing", () => {
      an empty page for a page that works. */
   const el = () => ({
     innerHTML: "", textContent: "", className: "", disabled: false,
-    firstChild: null, files: [],
+    firstChild: null, files: [], value: "", hidden: false,
     appendChild(child) { this.innerHTML += child.innerHTML; },
     insertBefore(child) { this.innerHTML += child.textContent; },
     addEventListener() {},
+    focus() {},
     classList: { add() {}, remove() {} },
   });
   const nodes = {};
@@ -382,7 +384,8 @@ test("the page renders an archive without throwing", () => {
     // The page loads these as script tags, where `require` does not exist.
     .replace(/typeof require === "function"/g, "false");
 
-  for (const f of ["js/record.js", "js/adapters.js", "js/archive.js", "js/insight.js", "js/app.js"]) {
+  for (const f of ["js/record.js", "js/notes.js", "js/adapters.js", "js/archive.js",
+                   "js/insight.js", "js/app.js"]) {
     vm.runInContext(strip(f), ctx, { filename: f });
   }
 
@@ -411,6 +414,27 @@ test("the page renders an archive without throwing", () => {
   assert.ok(nodes.sourceCards.innerHTML.includes("syllogimous"), "the sources are empty");
   assert.ok(nodes.overlapCards.innerHTML.includes("of 20"), "the overlap gate says nothing");
   assert.strictEqual(nodes.save.disabled, false, "the download button stayed disabled");
+
+  /*
+   * Notes through the real render, including a note that is trying to be
+   * markup. Everything else this page prints is a source name or a number it
+   * computed; notes are the first text on it a person typed, and the first that
+   * could close a tag.
+   */
+  ctx.archive.notes = [
+    N.makeNote({ id: "n1", day: "2026-08-25", at: 1, text: "<script>alert(1)</script> felt slow",
+      tags: ["sleep"], measure: { name: "RAPM", value: 27, unit: "raw" } }),
+    N.tombstone(N.makeNote({ id: "n2", day: "2026-08-24", at: 1, text: "deleted" }), 9),
+  ];
+  ctx.render();
+
+  assert.ok(nodes.noteList.innerHTML.includes("felt slow"), "the note did not render");
+  assert.ok(!nodes.noteList.innerHTML.includes("<script>"),
+    "a note closed its own tag — note text reaches innerHTML unescaped");
+  assert.ok(nodes.noteList.innerHTML.includes("&lt;script&gt;"), "the text was dropped, not escaped");
+  assert.ok(!nodes.noteList.innerHTML.includes("deleted"), "a deleted note is still on the page");
+  assert.ok(nodes.measures.innerHTML.includes("RAPM"), "the measure series is empty");
+  assert.ok(nodes.daysTable.innerHTML.includes("&#9998;"), "the day with a note carries no marker");
 });
 
 /* ------------------------------------------------------------------ */
@@ -1162,6 +1186,138 @@ test("page: rootMargin is in units rootMargin accepts", () => {
         + " DOMContentLoaded down with it");
     }
   }
+});
+
+/* ------------------------------------------------------------------ *
+ * Notes                                                               *
+ * ------------------------------------------------------------------ *
+ *
+ * The one thing in the archive that no export can rebuild, which raises the
+ * stakes on the merge: a bug in the record merge costs a re-import, a bug here
+ * costs something that existed in one place.
+ */
+
+const aNote = (over) => N.makeNote(Object.assign(
+  { id: "n1", day: "2026-03-01", at: 1000, text: "took the RAPM" }, over));
+
+test("notes: folding the same file twice changes nothing", () => {
+  const one = [aNote({}), aNote({ id: "n2", day: "2026-03-02", text: "slept badly" })];
+  const first = N.mergeNotes([], one);
+  const again = N.mergeNotes(first.notes, one);
+  assert.strictEqual(again.total, 2, "a re-import doubled the notes");
+  assert.strictEqual(again.added, 0);
+  assert.strictEqual(again.updated, 0);
+});
+
+test("notes: the later writing wins, whichever file arrived first", () => {
+  const edited = aNote({ text: "took the RAPM, scored 27", editedAt: 5000 });
+  const stale = aNote({ text: "took the RAPM", editedAt: 1000 });
+
+  const forwards = N.mergeNotes([stale], [edited]).notes[0];
+  assert.strictEqual(forwards.text, "took the RAPM, scored 27");
+
+  /* The case the record merge gets wrong for notes: an old backup folded in
+     after an edit. "Later import wins" would revert the sentence. */
+  const backwards = N.mergeNotes([edited], [stale]).notes[0];
+  assert.strictEqual(backwards.text, "took the RAPM, scored 27",
+    "folding an old archive in silently reverted an edit");
+});
+
+test("notes: a deletion survives an old archive being folded back in", () => {
+  const live = aNote({ editedAt: 1000 });
+  const gone = N.tombstone(live, 5000);
+
+  const after = N.mergeNotes([gone], [live]);
+  assert.strictEqual(after.total, 1, "the tombstone was dropped, not kept");
+  assert.strictEqual(N.visibleNotes({ notes: after.notes }).length, 0,
+    "a deleted note came back when an older archive was imported");
+});
+
+test("notes: a tombstone does not keep what it was told to forget", () => {
+  const gone = N.tombstone(aNote({ tags: ["iq"], measure: { name: "RAPM", value: 27 } }), 5000);
+  assert.strictEqual(gone.text, "", "the text stayed in the file after a delete");
+  assert.deepStrictEqual(gone.tags, []);
+  assert.strictEqual(gone.measure, null);
+  assert.strictEqual(gone.id, "n1", "the identity is what makes the deletion propagate");
+});
+
+test("notes: the day is taken as given, not guessed from the clock", () => {
+  // One in the morning in Berlin is the day before in UTC. The form hands the
+  // local day down, and a note must land on the day the person meant.
+  const n = N.makeNote({ id: "x", day: "2026-03-02", at: Date.UTC(2026, 2, 1, 23, 30) });
+  assert.strictEqual(n.day, "2026-03-02");
+  const guessed = N.makeNote({ id: "y", at: Date.UTC(2026, 2, 1, 23, 30) });
+  assert.strictEqual(guessed.day, "2026-03-01", "with no day given, the clock decides");
+});
+
+test("notes: a measure needs a number, and carries its unit", () => {
+  assert.strictEqual(N.makeNote({ id: "a", measure: { name: "RAPM" } }).measure, null,
+    "a name with no value is not a measurement");
+  assert.strictEqual(N.makeNote({ id: "a", measure: { name: "RAPM", value: "" } }).measure, null);
+  assert.strictEqual(N.makeNote({ id: "a", measure: { name: "RAPM", value: "27" } }).measure.value, 27);
+  assert.strictEqual(N.makeNote({ id: "a", measure: { value: 27 } }).measure, null,
+    "a number with no name cannot be put beside anything");
+});
+
+test("notes: one name in two units is one heading that says so", () => {
+  const archive = { notes: [
+    aNote({ id: "a", day: "2026-01-01", measure: { name: "RAPM", value: 24, unit: "raw" } }),
+    aNote({ id: "b", day: "2026-06-01", measure: { name: "RAPM", value: 88, unit: "percentile" } }),
+    aNote({ id: "c", day: "2026-03-01", measure: { name: "digit span", value: 7, unit: "" } }),
+  ] };
+  const series = N.measureSeries(archive);
+  assert.deepStrictEqual(series.map((s) => s.name), ["RAPM", "digit span"]);
+
+  const rapm = series[0];
+  assert.deepStrictEqual(rapm.points.map((p) => p.value), [24, 88], "points are out of order");
+  assert.ok(rapm.mixed, "raw and percentile were treated as one series");
+  assert.ok(!series[1].mixed);
+});
+
+test("notes: a deleted note is in no series and no tag count", () => {
+  const archive = { notes: [
+    N.tombstone(aNote({ id: "a", tags: ["iq"], measure: { name: "RAPM", value: 24 } }), 9000),
+    aNote({ id: "b", tags: ["iq", "sleep"] }),
+  ] };
+  assert.deepStrictEqual(N.measureSeries(archive), []);
+  assert.deepStrictEqual(N.tagCounts(archive).map((t) => t.tag), ["iq", "sleep"]);
+});
+
+test("notes: two devices offline do not collide", () => {
+  const ids = new Set();
+  for (let i = 0; i < 2000; i++) ids.add(N.noteId(Date.now()));
+  assert.strictEqual(ids.size, 2000, "ids collided within a single millisecond run");
+});
+
+test("notes: an archive carries its notes out and back", () => {
+  const archive = A.emptyArchive();
+  A.foldNotes(archive, [aNote({ tags: ["iq"], measure: { name: "RAPM", value: 27, unit: "raw" } })]);
+  A.fold(archive, {
+    source: "syllogimous",
+    records: [makeRecord({ source: "syllogimous", id: "1", at: Date.UTC(2026, 2, 1), seconds: 30, correct: 1 })],
+    minutes: { "2026-03-01": 10 },
+  }, "a");
+
+  // Out through the download, back in through the adapter, exactly as the page
+  // does it — this is the path a restore takes, and notes were dropped on it.
+  const roundTrip = readFile(JSON.stringify(archive));
+  assert.ok(roundTrip.archive, "our own archive was not recognised");
+  assert.strictEqual(roundTrip.notes.length, 1, "the notes did not survive the download");
+
+  const restored = A.emptyArchive();
+  for (const r of roundTrip.readings) A.fold(restored, r, "f", roundTrip.writtenOn);
+  A.foldNotes(restored, roundTrip.notes);
+  assert.strictEqual(N.visibleNotes(restored).length, 1);
+  assert.strictEqual(N.visibleNotes(restored)[0].measure.value, 27);
+});
+
+test("notes: an archive written before notes existed still opens", () => {
+  const old = A.emptyArchive();
+  delete old.notes;
+  const reading = readFile(JSON.stringify(old.records.length ? old
+    : Object.assign(old, { records: [makeRecord({ source: "s", id: "1", at: 1000 })] })));
+  assert.ok(reading.archive);
+  assert.deepStrictEqual(reading.notes, [], "a missing notes array should read as none");
 });
 
 for (const [name, fn] of cases) {

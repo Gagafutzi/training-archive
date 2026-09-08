@@ -832,7 +832,12 @@ function readArchiveExport(file) {
     if (!isNaN(d.getTime())) writtenOn = d.toISOString().slice(0, 10);
   }
 
-  return { archive: true, writtenOn: writtenOn, readings: readings };
+  /* Notes ride alongside the per-source readings rather than inside one of
+     them: they belong to no trainer, and splitting them across sources would
+     merge every note once per source. */
+  var notes = Array.isArray(file.notes) ? file.notes : [];
+
+  return { archive: true, writtenOn: writtenOn, readings: readings, notes: notes };
 }
 
 /* ------------------------------------------------------------------ *

@@ -41,12 +41,54 @@ is idempotent: running it twice costs nothing and changes nothing.
   served from the same origin they are — on GitHub Pages every repo of one
   account shares an origin, so on the deployed site no export is needed. Locally
   they are separate origins and it finds nothing.
+- **Write notes** for anything no export knows: a test score, an illness, a
+  change of dose, a month you felt slow. See below.
 - **Download archive** writes the file. Do this whenever you have imported
-  something.
+  something *or written a note*.
 
 Keep the original exports too. The adapters will be wrong sometimes and a site
 will change its format without telling anybody; the file you kept is what lets a
 fixed adapter re-read it. Nothing here is ever the only copy of anything.
+
+## Notes
+
+Everything the trainers cannot tell you. An export knows what you answered and
+when; it does not know that you took an IQ test in March, were ill through June,
+changed a dose, or simply felt slow for a month. Those are the facts that make a
+two-year series readable, and they exist nowhere but in your head.
+
+A note is a day, some text, optional tags, and optionally **one number**. The
+number has its own three fields — name, value, unit — because a score kept as
+prose ("did the RAPM, got 27") can never be put beside the next one. Measures
+are listed as their own series under the form.
+
+They are **not** drawn on the charts above. Those axes are minutes and one
+source's difficulty; an IQ score shares neither, and putting it there would be
+the same mistake as drawing premise counts and n-back load as one line. A
+measure name recorded in two units gets one heading that says the units
+disagree, rather than two headings that each look like a clean series.
+
+Three things about notes differ from everything else here, all for the same
+reason — a note exists in the archive file or nowhere:
+
+- **They are unsaved the moment you write them.** Losing an import costs a drag
+  and drop, because the export it came from is still on disk. A note has no
+  export behind it, so writing, editing and deleting all mark the file behind
+  and the tab asks before closing.
+- **They merge by when they were written, not by which file arrived last.**
+  Records use "the later import wins", because a record is an observation and a
+  later export saw the same event with more history behind it. A note is
+  authored: there is no better view of it later, only an earlier and a later
+  version of what you wrote. Folding an old backup in must not revert an edit.
+- **Deleting leaves a tombstone.** Union merge cannot express removal — delete a
+  note, fold in last month's archive, and it returns. So a deleted note keeps its
+  id and its timestamp and loses everything else. The deletion then propagates by
+  the same rule an edit does, and the file stops holding the text of something
+  you asked it to forget.
+
+The convenience cache keeps notes **whole**, unlike records, which it stores
+lossy on purpose. Records can be rebuilt by dropping the exports in again;
+notes cannot be rebuilt from anything.
 
 ## The rules it is built on
 

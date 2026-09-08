@@ -19,9 +19,11 @@
    losing it costs a drag and drop.
 */
 
-/* global mergeRecords */
+/* global mergeRecords, mergeNotes */
 var REC2 = typeof require === "function" ? require("./record.js") : null;
 var _mergeRecords = REC2 ? REC2.mergeRecords : mergeRecords;
+var NOTES2 = typeof require === "function" ? require("./notes.js") : null;
+var _mergeNotes = NOTES2 ? NOTES2.mergeNotes : mergeNotes;
 
 var CACHE_KEY = "archive.cache.v1";
 var SCHEMA = 1;
@@ -71,6 +73,15 @@ function emptyArchive() {
      * export will still contain.
      */
     state: {},
+    /**
+     * What you wrote down yourself — see `notes.js`.
+     *
+     * The only part of this file no export can ever reproduce. Every record
+     * here can be recovered by dropping the trainers' exports in again; a note
+     * exists in this file or nowhere, which is why it is also the one thing the
+     * convenience cache keeps in full.
+     */
+    notes: [],
   };
 }
 
@@ -175,6 +186,20 @@ function fold(archive, reading, fileName, writtenOn) {
 /* ------------------------------------------------------------------ *
  * What the archive can say                                            *
  * ------------------------------------------------------------------ */
+
+/**
+ * Fold notes in, apart from any source.
+ *
+ * Notes belong to the archive rather than to a trainer, so they do not travel
+ * through `fold` — which takes one source's reading at a time and would merge
+ * the same notes once per source.
+ */
+function foldNotes(archive, notes) {
+  var merged = _mergeNotes(archive.notes || [], notes || []);
+  archive.notes = merged.notes;
+  if (merged.added || merged.updated) archive.updatedAt = Date.now();
+  return { added: merged.added, updated: merged.updated, total: merged.total };
+}
 
 /** Every day any source recorded time, oldest first. */
 function days(archive) {
@@ -317,6 +342,11 @@ function cacheSave(archive) {
       // The state snapshots are the bulkiest thing here and the least useful to
       // a page that draws bars; they live in the file.
       state: {},
+      /* Kept whole, unlike everything else here. The cache is lossy on purpose
+         because records can be rebuilt from the exports — notes cannot be
+         rebuilt from anything, so dropping them to save space would make this
+         the one cache whose loss actually costs something. */
+      notes: archive.notes || [],
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(slim));
     return true;
@@ -333,6 +363,8 @@ function cacheLoad() {
     if (!parsed || parsed.schema !== SCHEMA || !Array.isArray(parsed.records)) return null;
     parsed.imports = parsed.imports || [];
     parsed.minutes = parsed.minutes || {};
+    // Archives written before notes existed have none, rather than an error.
+    parsed.notes = Array.isArray(parsed.notes) ? parsed.notes : [];
     return parsed;
   } catch (e) {
     return null;
@@ -342,7 +374,7 @@ function cacheLoad() {
 if (typeof module !== "undefined") {
   module.exports = {
     emptyArchive: emptyArchive, fold: fold, days: days, dayRow: dayRow,
-    mergeSpans: mergeSpans, covered: covered, nextDay: nextDay,
+    mergeSpans: mergeSpans, covered: covered, nextDay: nextDay, foldNotes: foldNotes,
     overlap: overlap, isoWeek: isoWeek, sourceSummary: sourceSummary,
     cacheSave: cacheSave, cacheLoad: cacheLoad, CACHE_KEY: CACHE_KEY,
   };

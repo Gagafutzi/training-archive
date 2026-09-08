@@ -474,3 +474,81 @@ html { scroll-behavior: smooth; }
   .topbar__brand { display: none; }
   body { padding-top: 4rem; }
 }
+
+/* ------------------------------------------------------------------ *
+ * Notes                                                              *
+ * ------------------------------------------------------------------ */
+
+.noteform { margin-top: 1rem; }
+.noteform label { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: var(--dim); }
+.noteform label.grow { flex: 1 1 14rem; }
+.noteform .row { margin-top: .6rem; align-items: flex-end; }
+
+.noteform input[type="text"],
+.noteform input[type="date"],
+.noteform input[type="number"],
+.noteform input[type="search"],
+.noteform textarea,
+#noteFilter {
+  padding: .4rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: .9rem;
+}
+.noteform textarea { width: 100%; resize: vertical; line-height: 1.5; }
+.noteform input:focus, .noteform textarea:focus, #noteFilter:focus {
+  outline: none; border-color: var(--accent);
+}
+
+/* The number is optional and reads as optional: set back, not boxed in as a
+   field you have to get past to write a sentence. */
+.measure {
+  margin: .8rem 0 0;
+  padding: .1rem .8rem .8rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+.measure legend { padding: 0 .4rem; font-size: .75rem; color: var(--dim); }
+.measure input[type="number"] { max-inline-size: 7rem; }
+.measure input[type="text"] { max-inline-size: 10rem; }
+
+.notes { list-style: none; margin: 1rem 0 0; padding: 0; }
+.note {
+  padding: .7rem .85rem;
+  margin-bottom: .5rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.note__head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-size: .85rem; }
+.note__acts { margin-inline-start: auto; display: flex; gap: .2rem; }
+.note__acts .btn { padding: .1rem .45rem; font-size: .75rem; }
+/* Wrapping and newlines both preserved: a note is written prose, and one long
+   line of it must not drag the page wider than the screen. */
+.note__text { margin: .5rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.tagrow { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; align-items: center; }
+.tag {
+  display: inline-block;
+  padding: .1rem .45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dim);
+  font: inherit;
+  font-size: .72rem;
+}
+button.tag { cursor: pointer; }
+button.tag:hover { color: var(--ink); border-color: #3d4c63; }
+
+.points { display: flex; flex-wrap: wrap; gap: .5rem; }
+.point {
+  padding: .15rem .5rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  font-size: .8rem;
+  font-variant-numeric: tabular-nums;
+}
