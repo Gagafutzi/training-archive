@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Training archive</title>
-<link rel="stylesheet" href="css/base.css">
+<!-- ?v= on every asset. Pages serves these with max-age=600, so a browser
+     that loaded the page while the wiring was broken would keep serving
+     itself the broken script for ten more minutes — and the failure is
+     silent, so it would read as "the fix did not work". Bump on release. -->
+<link rel="stylesheet" href="css/base.css?v=2">
 </head>
 <body>
 
@@ -112,10 +116,10 @@
   <ul id="log" class="log"></ul>
 </section>
 
-<script src="js/record.js"></script>
-<script src="js/adapters.js"></script>
-<script src="js/archive.js"></script>
-<script src="js/insight.js"></script>
-<script src="js/app.js"></script>
+<script src="js/record.js?v=2"></script>
+<script src="js/adapters.js?v=2"></script>
+<script src="js/archive.js?v=2"></script>
+<script src="js/insight.js?v=2"></script>
+<script src="js/app.js?v=2"></script>
 </body>
 </html>
