@@ -339,7 +339,11 @@ function render() {
   renderKnownTags();
   renderSaveState();
   refreshUndo();
-  $("save").disabled = archive.records.length === 0;
+  /* Notes count as something to download, not just records.
+     A fresh archive with a note in it and no imports had nothing to save by
+     this test — so the page marked the file behind, armed the warning on close,
+     and disabled the one button that could have written the note out. */
+  $("save").disabled = archive.records.length === 0 && visibleNotes(archive).length === 0;
 }
 
 /* ------------------------------------------------------------------ *

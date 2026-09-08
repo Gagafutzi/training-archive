@@ -435,6 +435,16 @@ test("the page renders an archive without throwing", () => {
   assert.ok(!nodes.noteList.innerHTML.includes("deleted"), "a deleted note is still on the page");
   assert.ok(nodes.measures.innerHTML.includes("RAPM"), "the measure series is empty");
   assert.ok(nodes.daysTable.innerHTML.includes("&#9998;"), "the day with a note carries no marker");
+
+  /* A note and nothing else must still be downloadable. Writing one marks the
+     file behind and arms the warning on close, so a Download that stayed
+     disabled would leave the only copy in a tab asking to be closed. */
+  const fresh = A.emptyArchive();
+  A.foldNotes(fresh, [N.makeNote({ id: "only", day: "2026-08-25", at: 1, text: "no training today" })]);
+  ctx.archive = fresh;
+  ctx.render();
+  assert.strictEqual(nodes.save.disabled, false,
+    "an archive holding only notes could not be downloaded");
 });
 
 /* ------------------------------------------------------------------ */
