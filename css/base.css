@@ -28,7 +28,9 @@
 
 body {
   margin: 0 auto;
-  padding: 2.5rem 1.5rem 5rem;
+  /* Top padding clears the sticky bar rather than the bar overlapping the
+     masthead; `scroll-margin-top` below does the same for every anchor. */
+  padding: 4.75rem 1.5rem 5rem;
   max-inline-size: 62rem;
   background: var(--bg);
   color: var(--ink);
@@ -370,4 +372,105 @@ td:last-child { color: var(--ok); font-size: .8rem; }
 /* Nothing here needs motion to be understood. */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+}
+
+
+/* ------------------------------------------------------------------ *
+ * The bar                                                             *
+ * ------------------------------------------------------------------ *
+ *
+ * This page is one document six thousand pixels tall, so the navigation is
+ * in-page rather than routed: eight anchors and the one action that must be
+ * reachable from all of them. The archive does not exist until it is
+ * downloaded, and a Download button only at the top means the moment you
+ * notice unsaved work is the moment you have to scroll away from it.
+ */
+
+.topbar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .5rem max(1.5rem, calc(50vw - 31rem));
+  background: rgba(11, 14, 20, .82);
+  border-block-end: 1px solid var(--line-soft);
+  /* Frosted where it is supported, flat where it is not — the fallback is the
+     colour above, which is already opaque enough to read against. */
+  backdrop-filter: blur(10px);
+}
+
+.topbar__brand {
+  font-weight: 600;
+  font-size: .82rem;
+  letter-spacing: .01em;
+  color: var(--ink-strong);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/*
+ * Scrolls sideways rather than wrapping. A bar that grows to two rows on a
+ * narrow screen moves every anchor underneath it and then hides the section
+ * you just jumped to.
+ */
+.topbar__links {
+  display: flex;
+  gap: .15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-inline-end: auto;
+}
+
+.topbar__links::-webkit-scrollbar { display: none; }
+
+.topbar__links a {
+  padding: .3rem .55rem;
+  border-radius: 6px;
+  font-size: .78rem;
+  color: var(--dim);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color .12s, background .12s;
+}
+
+.topbar__links a:hover { color: var(--ink); background: var(--panel-hi); }
+
+/* Set by the scroll spy in app.js, so the bar says where you are rather than
+   only where you can go. */
+.topbar__links a.is-current {
+  color: var(--ink-strong);
+  background: var(--panel-hi);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.topbar__save { padding: .32rem .8rem; font-size: .78rem; }
+.topbar__save:disabled { opacity: .45; }
+
+/* The count of imports not yet in any file. Silent when there are none —
+   a badge reading zero is a badge nobody stops reading. */
+.pill {
+  display: inline-block;
+  margin-inline-start: .45rem;
+  min-inline-size: 1.15rem;
+  padding: 0 .3rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .32);
+  font-size: .72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Anchors land below the bar instead of behind it. */
+section[id] { scroll-margin-top: 4rem; }
+
+html { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+@media (max-width: 40rem) {
+  .topbar__brand { display: none; }
+  body { padding-top: 4rem; }
 }

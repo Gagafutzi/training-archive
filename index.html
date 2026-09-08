@@ -8,6 +8,25 @@
 </head>
 <body>
 
+<nav class="topbar" aria-label="Sections">
+  <a class="topbar__brand" href="#drop">Training archive</a>
+  <div class="topbar__links">
+    <a href="#drop">Import</a>
+    <a href="#year">Year</a>
+    <a href="#sources">Sources</a>
+    <a href="#over-time">Over&nbsp;time</a>
+    <a href="#modes">Modes</a>
+    <a href="#overlap">Overlap</a>
+    <a href="#days">Days</a>
+    <a href="#imports">Log</a>
+  </div>
+  <!-- The one action worth reaching from anywhere: the page is six thousand
+       pixels tall and the archive only exists once it is downloaded. -->
+  <button id="save" class="btn primary topbar__save" type="button" disabled>
+    Download<span id="unsaved" class="pill" hidden></span>
+  </button>
+</nav>
+
 <header>
   <h1>Training archive</h1>
   <p class="dim">
@@ -23,7 +42,6 @@
   <div class="row">
     <label class="btn">Choose files<input id="file" type="file" accept=".json" multiple hidden></label>
     <button id="neighbours" class="btn" type="button">Read this browser</button>
-    <button id="save" class="btn primary" type="button" disabled>Download archive</button>
   </div>
   <div class="row">
     <button id="undo" class="btn quiet" type="button" hidden>Undo last import</button>
@@ -31,7 +49,7 @@
   <p id="savestate" class="savestate"></p>
 </section>
 
-<section>
+<section id="year">
   <h2>The year</h2>
   <p class="dim">
     One square per day. A <b>filled</b> square is a day with training; an
@@ -44,12 +62,12 @@
   <div id="heatmap" class="heatmap"></div>
 </section>
 
-<section>
+<section id="sources">
   <h2>Sources</h2>
   <div id="sources" class="cards"></div>
 </section>
 
-<section>
+<section id="over-time">
   <h2>Over time</h2>
   <p class="dim">
     Minutes as bars, <b>difficulty</b> as the line &mdash; because an adaptive
@@ -61,12 +79,12 @@
   <div id="charts"></div>
 </section>
 
-<section>
+<section id="modes">
   <h2>By mode</h2>
   <div id="modes" class="modes"></div>
 </section>
 
-<section>
+<section id="overlap">
   <h2>Overlap</h2>
   <p class="dim">
     Comparing two trainers needs weeks in which both were played. Until there are
@@ -77,7 +95,7 @@
   <div id="overlap" class="cards"></div>
 </section>
 
-<section>
+<section id="days">
   <h2>Days</h2>
   <div class="row">
     <label>Source <select id="filterSource"></select></label>
@@ -89,7 +107,7 @@
   <table id="days"></table>
 </section>
 
-<section>
+<section id="imports">
   <h2>Imports</h2>
   <ul id="log" class="log"></ul>
 </section>

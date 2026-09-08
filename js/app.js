@@ -61,6 +61,8 @@ function markSaved() {
 }
 
 function renderSaveState() {
+  renderUnsavedPill();
+
   var host = $("savestate");
   if (!host) return;
 
@@ -79,6 +81,66 @@ function renderSaveState() {
   host.textContent = savedAt
     ? "Downloaded " + savedAt.slice(0, 10) + " — the file is up to date."
     : "Never downloaded from this browser. Nothing here survives clearing site data.";
+}
+
+/*
+ * The same fact as `savestate`, in the one place that is always on screen.
+ *
+ * Hidden at zero rather than shown as "0": a badge that is always there is a
+ * badge nobody reads, and the sentence in the drop zone already covers the
+ * settled case.
+ */
+function renderUnsavedPill() {
+  var pill = $("unsaved");
+  if (!pill) return;
+  pill.hidden = unsavedImports === 0;
+  pill.textContent = String(unsavedImports);
+}
+
+/* ------------------------------------------------------------------ *
+ * Where you are                                                       *
+ * ------------------------------------------------------------------ *
+ *
+ * The bar says which section you can jump to; this says which one you are in.
+ * An observer rather than a scroll handler, so it costs nothing while you read
+ * and nothing has to be recomputed on every frame.
+ *
+ * `rootMargin` pulls the sensing line down to just under the bar, so a section
+ * counts as current when its heading reaches the bar rather than when its
+ * bottom edge leaves the viewport.
+ */
+function watchSections() {
+  if (typeof IntersectionObserver !== "function") return;
+
+  var links = {};
+  var anchors = document.querySelectorAll(".topbar__links a");
+  for (var i = 0; i < anchors.length; i++) {
+    links[anchors[i].getAttribute("href").slice(1)] = anchors[i];
+  }
+
+  var sections = document.querySelectorAll("section[id]");
+  var seen = {};
+
+  function paint() {
+    var current = "";
+    for (var i = 0; i < sections.length; i++) {
+      if (seen[sections[i].id]) { current = sections[i].id; break; }
+    }
+    for (var id in links) {
+      if (Object.prototype.hasOwnProperty.call(links, id)) {
+        links[id].classList.toggle("is-current", id === current);
+      }
+    }
+  }
+
+  var observer = new IntersectionObserver(function (entries) {
+    for (var i = 0; i < entries.length; i++) {
+      seen[entries[i].target.id] = entries[i].isIntersecting;
+    }
+    paint();
+  }, { rootMargin: "-4rem 0px -70% 0px" });
+
+  for (var j = 0; j < sections.length; j++) observer.observe(sections[j]);
 }
 
 /* ------------------------------------------------------------------ *
@@ -647,6 +709,7 @@ function loadArchive(text) {
  * ------------------------------------------------------------------ */
 
 window.addEventListener("DOMContentLoaded", function () {
+  watchSections();
   $("file").addEventListener("change", function (e) { takeFiles(e.target.files); e.target.value = ""; });
   $("save").addEventListener("click", saveArchive);
   $("neighbours").addEventListener("click", importNeighbours);
